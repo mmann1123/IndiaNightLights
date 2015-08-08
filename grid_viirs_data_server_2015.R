@@ -29,8 +29,18 @@ registerDoParallel(32)
 
 setwd("/groups/manngroup/India VIIRS/2015")
 
-
+# read in list of files and set up iteration groups
 d <- list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
+iterator = split(1:length(d), cut(1:length(d),9))
+
+#iterate through smaller groups
+for(j in 1:length(iterator)){
+
+#get fresh list 
+d <- list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
+print(d[iterator[[j]]])
+
+d = d[iterator[[j]]]
 
 #For each 5-min swath file (DNB/CMASK) in directory (HDF5s)
  
@@ -110,8 +120,9 @@ stopImplicitCluster()
 #windows()
 #plot(log(output2[[1]]*1e9))
 
-lapply(1:length(output2),function(x) if(!is.na(output2[[x]])&  class(output[[x]] ){ 
+lapply(1:length(output2),function(x) if(!is.na(output2[[x]])&  class(output[[x]] )){ 
 	print(x)
 	writeRaster(output2[[x]], filename=paste(getwd(),'//',
         substr(d[x],36,47),'_cld_v2.tif',sep=""),format='GTiff',overwrite=TRUE)})
 remove(output2)
+}
