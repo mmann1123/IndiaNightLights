@@ -12,7 +12,6 @@
 #module load gcc/4.9.0
 # R
 
-
 library('rhdf5')
 library('raster')
 #library('R.utils')
@@ -22,19 +21,16 @@ library('foreach')
 library('iterators')
 library('doParallel')
 
-#Register the parallel backend
 registerDoParallel(32)
-
-
 
 setwd("/groups/manngroup/India VIIRS/2015")
 
 # read in list of files and set up iteration groups
 d <- list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
-iterator = split(1:length(d), cut(1:length(d),9))
+iterator = split(1:length(d), cut(1:length(d),10))
 
 #iterate through smaller groups
-for(j in 1:length(iterator)){
+for(j in 4:length(iterator)){
 
 #get fresh list 
 d <- list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
@@ -48,8 +44,7 @@ output <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')
     print(i)  
    
     fname <- d[i]
-   # h5ls(fname)
-    
+       
     ### Grid DNB Radiance ###
     #http://neondataskills.org/HDF5/Create-Raster-Stack-Spectroscopy-HDF5-In-R/
         
@@ -74,20 +69,10 @@ output <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')
     a
 }
 
-#windows()
-#plot(log(output[[1]]*1e9))
-
-
-lapply(1:length(output),function(x) if(!is.na(output[[x]]) &  class(output[[x]])=='RasterLayer'){ 
-	print(x)
-	writeRaster(output[[x]], filename=paste(getwd(),'//',
-        substr(d[x],36,47),'_dnb_v2.tif',sep=""),format='GTiff',overwrite=TRUE)})
-   
-remove(output)
-    
+save(output, file=paste(getwd(),'/job_output1_', j,'_v2.RData',sep=""))
 
 output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
-    
+    print(i)
     fname <- d[i]
     
     cmask <- h5read(fname,'/CloudMask')
@@ -101,28 +86,21 @@ output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster'
     ymax = max(lat_cmask)
     example =raster(matrix(NA,nrow=dim(lat_cmask)[1],ncol=dim(lat_cmask)[2]), xmn=xmin, 
 	xmx=xmax, ymn=ymin, ymx=ymax, crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0 ") )
-    if(length(lon_cmask)!=length(lat_cmask)| length(lon_cmask) !=length(cmask)){
+    
+     if(length(lon_cmask)!=length(lat_cmask)| length(lon_cmask) !=length(cmask)){
 	#special case for non matching data lengths
 	a=c("this file had different lenghts for lat, lon and cmask")
 	write.csv(a,paste(getwd(),'//',
                substr(d[i],40,51),'_cld_v2_FAILED_DIF_LENGTHS.csv',sep=""))
 	return(NA)
-	}
+	}else{
 
     data = data.frame(lon=as.numeric(lon_cmask), lat = as.numeric(lat_cmask),cloud=as.numeric(cmask))
     coordinates(data) =~lon+lat
     cloud = rasterize(x=data,y=example,field='cloud',fun='last',background=NA)
     cloud
+	}
 }
 
-stopImplicitCluster()
-
-#windows()
-#plot(log(output2[[1]]*1e9))
-
-lapply(1:length(output2),function(x) if(!is.na(output2[[x]])&  class(output[[x]] )){ 
-	print(x)
-	writeRaster(output2[[x]], filename=paste(getwd(),'//',
-        substr(d[x],36,47),'_cld_v2.tif',sep=""),format='GTiff',overwrite=TRUE)})
-remove(output2)
+save(output2, file=paste(getwd(),'/job_output2_', j,'_v2.RData',sep=""))
 }
