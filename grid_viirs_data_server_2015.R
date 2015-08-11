@@ -14,7 +14,6 @@
 
 library('rhdf5')
 library('raster')
-#library('R.utils')
 library('sp')
 library('rgdal')
 library('foreach')
