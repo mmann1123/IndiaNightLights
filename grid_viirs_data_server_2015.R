@@ -29,7 +29,7 @@ d <- list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
 iterator = split(1:length(d), cut(1:length(d),10))
 
 #iterate through smaller groups
-for(j in 4:length(iterator)){
+for(j in 1:length(iterator)){
 
 #get fresh list 
 d <- list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
@@ -65,10 +65,11 @@ output <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')
     data[data==-1.5e-09,]=NA
     coordinates(data) =~lon+lat
     a = rasterize(x=data,y=example,field='dnb',fun='last',background=NA)
+    a@data@names = substr(d[i],36,47)
     a
 }
 
-save(output, file=paste(getwd(),'/job_output1_', j,'_v2.RData',sep=""))
+save(output, file=paste(getwd(),'/job_output1_', j,'_v3.RData',sep=""))
 
 output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
     print(i)
@@ -83,8 +84,8 @@ output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster'
     ymin = min(lat_cmask)
     xmax = max(lon_cmask)
     ymax = max(lat_cmask)
-    example =raster(matrix(NA,nrow=dim(lat_cmask)[1],ncol=dim(lat_cmask)[2]), xmn=xmin, 
-	xmx=xmax, ymn=ymin, ymx=ymax, crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0 ") )
+    example =raster(matrix(NA,nrow=dim(lat_cmask)[1],ncol=dim(lat_cmask)[2]),xmn=xmin,xmx=xmax,
+	ymn=ymin,ymx=ymax,crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
     
      if(length(lon_cmask)!=length(lat_cmask)| length(lon_cmask) !=length(cmask)){
 	#special case for non matching data lengths
@@ -97,9 +98,10 @@ output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster'
     data = data.frame(lon=as.numeric(lon_cmask), lat = as.numeric(lat_cmask),cloud=as.numeric(cmask))
     coordinates(data) =~lon+lat
     cloud = rasterize(x=data,y=example,field='cloud',fun='last',background=NA)
+    cloud@data@names = substr(d[i],36,47)
     cloud
 	}
 }
 
-save(output2, file=paste(getwd(),'/job_output2_', j,'_v2.RData',sep=""))
+save(output2, file=paste(getwd(),'/job_output2_', j,'_v3.RData',sep=""))
 }
