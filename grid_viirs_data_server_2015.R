@@ -12,29 +12,33 @@
 #module load gcc/4.9.0
 # R
 
-
 library('rhdf5')
 library('raster')
-#library('R.utils')
 library('sp')
 library('rgdal')
 library('foreach')
 library('iterators')
 library('doParallel')
 
+<<<<<<< HEAD
 #Register the parallel backend
 registerDoParallel(4)
 
 
 
 setwd("C://Users/mmann/Desktop/NightTimeData/")
+=======
+registerDoParallel(32)
+
+setwd("/groups/manngroup/India VIIRS/2015")
+>>>>>>> 234ad987d8d72dd76fb0cb3ce642474b4629982b
 
 # read in list of files and set up iteration groups
 d <- list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
 iterator = split(1:length(d), cut(1:length(d),10))
 
 #iterate through smaller groups
-for(j in 1:length(iterator)){
+for(j in 4:length(iterator)){
 
 #get fresh list 
 d <- list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
@@ -48,8 +52,7 @@ output <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')
     print(i)  
    
     fname <- d[i]
-   # h5ls(fname)
-    
+       
     ### Grid DNB Radiance ###
     #http://neondataskills.org/HDF5/Create-Raster-Stack-Spectroscopy-HDF5-In-R/
         
@@ -74,6 +77,7 @@ output <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')
     a
 }
 
+<<<<<<< HEAD
 windows()
 plot(log(output[[1]]*1e9))
 
@@ -87,6 +91,9 @@ save(output, file=paste(getwd(),'/job_output1_', j,'_v2.RData',sep=""))
    
 #remove(output)
     
+=======
+save(output, file=paste(getwd(),'/job_output1_', j,'_v2.RData',sep=""))
+>>>>>>> 234ad987d8d72dd76fb0cb3ce642474b4629982b
 
 output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
     print(i)
@@ -119,6 +126,7 @@ output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster'
 	}
 }
 
+<<<<<<< HEAD
 
 save(output2, file=paste(getwd(),'/job_output2_', j,'_v2.RData',sep=""))
 
@@ -134,4 +142,7 @@ save(output2, file=paste(getwd(),'/job_output2_', j,'_v2.RData',sep=""))
 #remove(output2)
 
 
+=======
+save(output2, file=paste(getwd(),'/job_output2_', j,'_v2.RData',sep=""))
+>>>>>>> 234ad987d8d72dd76fb0cb3ce642474b4629982b
 }
