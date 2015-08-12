@@ -80,7 +80,6 @@ remove(output)
 
 # read in  cloud band data -------------------------------------------
 
-
 output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
     print(i)
     fname <- d[i]
@@ -111,7 +110,7 @@ output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster'
     cloud@data@names = substr(d[i],36,47)
     cloud
 	}
-}
+   }
 
 save(output2, file=paste(getwd(),'/job_output2_', j,'_v3.RData',sep=""))
 remove(output2)
