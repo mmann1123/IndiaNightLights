@@ -1,6 +1,7 @@
-##This script reprojects VIIRS DNB and Cloud Mask data to common
-##30 arc-second grid centered on Maharashtra, India
+##This script reprojects VIIRS DNB and Cloud Mask data to grid centered on Maharashtra, India
+## it saves output at lists stored in RData format (to avoid errors with writing files) 
 
+# to install rhdf5
 #source("http://bioconductor.org/biocLite.R")
 #biocLite("rhdf5")
 
@@ -29,16 +30,20 @@ d <- list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
 iterator = split(1:length(d), cut(1:length(d),10))
 
 #iterate through smaller groups
-for(j in 1:length(iterator)){
+for(j in 6:length(iterator)){
 
 #get fresh list 
 d <- list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
 print(d[iterator[[j]]])
 
+# limit to the first group
 d = d[iterator[[j]]]
 
 #For each 5-min swath file (DNB/CMASK) in directory (HDF5s)
  
+# Write out DNB band data -------------------------------------------
+
+
 output <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
     print(i)  
    
@@ -70,6 +75,11 @@ output <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')
 }
 
 save(output, file=paste(getwd(),'/job_output1_', j,'_v3.RData',sep=""))
+remove(output)
+
+
+# read in  cloud band data -------------------------------------------
+
 
 output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
     print(i)
@@ -104,4 +114,5 @@ output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster'
 }
 
 save(output2, file=paste(getwd(),'/job_output2_', j,'_v3.RData',sep=""))
+remove(output2)
 }
