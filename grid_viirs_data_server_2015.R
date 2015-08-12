@@ -1,6 +1,7 @@
-##This script reprojects VIIRS DNB and Cloud Mask data to common
-##30 arc-second grid centered on Maharashtra, India
+##This script reprojects VIIRS DNB and Cloud Mask data to grid centered on Maharashtra, India
+## it saves output at lists stored in RData format (to avoid errors with writing files) 
 
+# to install rhdf5
 #source("http://bioconductor.org/biocLite.R")
 #biocLite("rhdf5")
 
@@ -20,34 +21,29 @@ library('foreach')
 library('iterators')
 library('doParallel')
 
-<<<<<<< HEAD
-#Register the parallel backend
-registerDoParallel(4)
-
-
-
-setwd("C://Users/mmann/Desktop/NightTimeData/")
-=======
 registerDoParallel(32)
 
 setwd("/groups/manngroup/India VIIRS/2015")
->>>>>>> 234ad987d8d72dd76fb0cb3ce642474b4629982b
 
 # read in list of files and set up iteration groups
 d <- list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
 iterator = split(1:length(d), cut(1:length(d),10))
 
 #iterate through smaller groups
-for(j in 4:length(iterator)){
+for(j in 6:length(iterator)){
 
 #get fresh list 
 d <- list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
 print(d[iterator[[j]]])
 
+# limit to the first group
 d = d[iterator[[j]]]
 
 #For each 5-min swath file (DNB/CMASK) in directory (HDF5s)
  
+# Write out DNB band data -------------------------------------------
+
+
 output <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
     print(i)  
    
@@ -74,26 +70,15 @@ output <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')
     data[data==-1.5e-09,]=NA
     coordinates(data) =~lon+lat
     a = rasterize(x=data,y=example,field='dnb',fun='last',background=NA)
+    a@data@names = substr(d[i],36,47)
     a
 }
 
-<<<<<<< HEAD
-windows()
-plot(log(output[[1]]*1e9))
-
-save(output, file=paste(getwd(),'/job_output1_', j,'_v2.RData',sep=""))
+save(output, file=paste(getwd(),'/job_output1_', j,'_v3.RData',sep=""))
+remove(output)
 
 
-#lapply(1:length(output),function(x) if( class(output[[x]])=='RasterLayer'){ 
-#	print(x)
-#	writeRaster(output[[x]], filename=paste(getwd(),'//',
-#        substr(d[x],36,47),'_dnb_v2.tif',sep=""),format='GTiff',overwrite=TRUE)})
-   
-#remove(output)
-    
-=======
-save(output, file=paste(getwd(),'/job_output1_', j,'_v2.RData',sep=""))
->>>>>>> 234ad987d8d72dd76fb0cb3ce642474b4629982b
+# read in  cloud band data -------------------------------------------
 
 output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
     print(i)
@@ -108,8 +93,8 @@ output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster'
     ymin = min(lat_cmask)
     xmax = max(lon_cmask)
     ymax = max(lat_cmask)
-    example =raster(matrix(NA,nrow=dim(lat_cmask)[1],ncol=dim(lat_cmask)[2]), xmn=xmin, 
-	xmx=xmax, ymn=ymin, ymx=ymax, crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0 ") )
+    example =raster(matrix(NA,nrow=dim(lat_cmask)[1],ncol=dim(lat_cmask)[2]),xmn=xmin,xmx=xmax,
+	ymn=ymin,ymx=ymax,crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
     
      if(length(lon_cmask)!=length(lat_cmask)| length(lon_cmask) !=length(cmask)){
 	#special case for non matching data lengths
@@ -122,27 +107,11 @@ output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster'
     data = data.frame(lon=as.numeric(lon_cmask), lat = as.numeric(lat_cmask),cloud=as.numeric(cmask))
     coordinates(data) =~lon+lat
     cloud = rasterize(x=data,y=example,field='cloud',fun='last',background=NA)
+    cloud@data@names = substr(d[i],36,47)
     cloud
 	}
-}
+   }
 
-<<<<<<< HEAD
-
-save(output2, file=paste(getwd(),'/job_output2_', j,'_v2.RData',sep=""))
-
-#stopImplicitCluster()
-
-#windows()
-#plot(log(output2[[1]]*1e9))
-
-#lapply(1:length(output2),function(x) if(  class(output2[[x]])=='RasterLayer'){ 
-#	print(x)
-#	writeRaster(output2[[x]], filename=paste(getwd(),'//',
-#        substr(d[x],36,47),'_cld_v2.tif',sep=""),format='GTiff',overwrite=TRUE)})
-#remove(output2)
-
-
-=======
-save(output2, file=paste(getwd(),'/job_output2_', j,'_v2.RData',sep=""))
->>>>>>> 234ad987d8d72dd76fb0cb3ce642474b4629982b
+save(output2, file=paste(getwd(),'/job_output2_', j,'_v3.RData',sep=""))
+remove(output2)
 }
