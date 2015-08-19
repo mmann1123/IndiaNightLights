@@ -6,6 +6,7 @@ library(rgeos)
 
 
 # this scripts reads in raster files exported from grid_viirs_data (3).R
+setwd('C:\\Users\\mmann\\Desktop\\NightTimeData\\')
 
 
 
@@ -13,7 +14,6 @@ library(rgeos)
 
 
 # read in data ------------------------------------------------------------
-setwd('C:\\Users\\mmann\\Desktop\\NightTimeData\\')
 
 # pull available files
 files = dir(pattern = '.tif')
@@ -133,27 +133,66 @@ time_stamp_cld = strptime(time_stamp_cld,"%Y%j.%H%M")
 all.equal(time_stamp_dnb,time_stamp_cld)
 
 # limit stacks to common elements
-common_dnb = (time_stamp_dnb %in% intersect(time_stamp_dnb,time_stamp_cld))
-dnb_stack = dnb_stack[[ (1:length(common_dnb))[common_dnb] ]]
+common_dnb = (time_stamp_dnb %in% intersect(time_stamp_dnb,time_stamp_cld)) # find common times
+dnb_stack = dnb_stack[[ (1:length(common_dnb))[common_dnb] ]]       # limit rasters to common times
 common_cld = (time_stamp_cld %in% intersect(time_stamp_dnb,time_stamp_cld))
 cld_stack = cld_stack[[ (1:length(common_cld))[common_cld] ]]
+time_stamp = time_stamp_dnb[(time_stamp_dnb %in% intersect(time_stamp_dnb,time_stamp_cld))]
 
 # remove cloud cells
-#dnb_stack[cld_stack>1]=NA
+#dnb_stack[cld_stack>1]=NA                      # already ran this just load
 #save(dnb_stack,file = 'dnb_stack_wo_cld.RData')
-load('dnb_stack_wo_cld.RData')
+load('dnb_stack_wo_cld.RData')                  # loads a cloud free version of dnb_stack
+setZ(dnb_stack,as.Date(time_stamp))
+
+# remove outliers 
+source('G://Faculty/Mann/Scripts/SplineAndOutlierRemoval.R')
+
+row = 900
+plot(log(getValues(dnb_stack,500,1)[row,]*1e9+1))
+points(log(SplineAndOutlierRemoval(getValues(dnb_stack,500,1)[400,], dates=time_stamp, out_sigma=3, spline_spar=0.55, out_iterations=30,pred_dates=time_stamp)*1e9+1),col='red')
+    
+# calculate stats   USER foreach_stack_stats.R for all examples
+
+stack_stat_mean = function(stack_rows){
+    stack_rows = log(stack_rows*1e9+1)
+    unlist(lapply( 1:dim(stack_rows)[1], function(i)  mean(stack_rows[i,],na.rm=T) ))
+} 
+
+stack_stat_min = function(stack_rows){
+    stack_rows = log(stack_rows*1e9+1)
+    unlist(lapply( 1:dim(stack_rows)[1], function(i)  min(stack_rows[i,],na.rm=T) ))
+} 
+
+stack_stat_pct_lessthan_value = function(stack_rows,value){
+    # calculate the % of non-na values that are below some level
+    stack_rows = log(stack_rows*1e9+1)
+    unlist(lapply(1:dim(stack_rows)[1], function(i) sum(stack_rows[i,]<value,na.rm=T)/sum(!is.na(stack_rows[i,]),na.rm=T) ))
+} 
 
 
-# calculate stats
-beginCluster(type='SOCK',n = 4) #http://rpackages.ianhowson.com/rforge/raster/man/cluster.html
+#Determine optimal block size for loading in MODIS stack data
+stack_in = dnb_stack
+block_width = 10
+nrows = dim(stack_in)[1]
+nblocks <- nrows%/%block_width
+bs_rows <- seq(1,nblocks*block_width,block_width)
+bs_nrows <- rbind(matrix(block_width,length(bs_rows)-1,1),nrows-bs_rows[length(bs_rows)]+1)
+print('Working on the following rows')
+print(paste(bs_rows))
 
-dnb_stack_mean <- clusterR(dnb_stack, mean, args=list(na.rm=T))
-save(dnb_stack_mean,file = 'dnb_stack_mean.RData')
+result <- foreach(i = 1:length(bs_rows),.packages = c('raster'),.inorder=T, .combine = c) %dopar% {
+    stack_values = getValues(stack_in, bs_rows[i], bs_nrows[i])
+    #dim(stack_values)
+    stat_values =  stack_stat_mean(stack_rows=stack_values)
+    #length(stat_values)
+    stat_values
+}
 
-dnb_stack_quan <- clusterR(dnb_stack, quantile, args=list(na.rm=T))
-save(dnb_stack_quan,file = 'dnb_stack_quan.RData')
+mean = dnb_stack[[1]]
+mean[]=result
 
-endCluster()
+
 
 # Unused code -------------------------------------------------------------
 #   proj_locations = spTransform( locations, CRS( "+proj=eqdc +lat_0=0 +lon_0=0 +lat_1=7 +lat_2=-32 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs " ) )  #http://spatialreference.org/ref/esri/102029/
