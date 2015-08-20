@@ -1,5 +1,5 @@
 %Change working directory to where VIIRS data are stored
-data_dir = '/projectnb/modislc/users/emelaas/VIIRS/NPP_VDNE/';
+data_dir = '/groups/manngroup/India VIIRS/2015/';
 cd(data_dir)
 d1 = dir('NPP_VDNE*hdf');
 
@@ -16,9 +16,9 @@ for i = 1:length(d1)
     path1 = [data_dir d1(i).name];
     
     %Extract date and time
-    year(i,1) = str2double(path1(1,62:65));
-    doy(i,1) = str2double(path1(1,66:68));
-    time(i,1) = str2double(path1(1,70:73));
+    year(i,1) = str2double(path1(1,49:52));
+    doy(i,1) = str2double(path1(1,53:55));
+    time(i,1) = str2double(path1(1,57:60));
     
     %Read in Moon data from HDFs
     t = hdfinfo(path1);
