@@ -23,11 +23,11 @@ library('doParallel')
 
 registerDoParallel(32)
 
-setwd("/groups/manngroup/India VIIRS/2015")
+setwd("/groups/manngroup/India VIIRS/May2015")
  
 # read in list of files and set up iteration groups
 d = list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
-iterator = split(1:length(d), cut(1:length(d),10))
+iterator = split(1:length(d), cut(1:length(d),3))   #11
 
 #iterate through smaller groups
 for(j in 1:length(iterator)){
@@ -39,15 +39,15 @@ for(j in 1:length(iterator)){
     # limit to the first group
     d = d[iterator[[j]]]
     
-    # store names for later 
-    name_date_time = substr(d[i],36,47)
-    
     #For each 5-min swath file (DNB/CMASK) in directory (HDF5s)
     # Write out DNB band data -------------------------------------------
     
     output <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
         print(i)  
         fname = d[i]
+
+        # store names for later
+        name_date_time = substr(d[i],39,50)
            
         ### Grid DNB Radiance ###
         #http://neondataskills.org/HDF5/Create-Raster-Stack-Spectroscopy-HDF5-In-R/
@@ -69,7 +69,7 @@ for(j in 1:length(iterator)){
         data = data.frame(lon=as.numeric(lon_dnb), lat = as.numeric(lat_dnb),dnb=as.numeric(dnb))
         data[data==-1.5e-09,]=NA
         coordinates(data) =~lon+lat
-        a = rasterize(x=data,y=example,field='dnb',fun='mean',background=NA)
+        a = rasterize(x=data,y=example,field='dnb',fun=mean,background=NA,na.rm=T)
         a@data@names = name_date_time
         a
     }
@@ -84,6 +84,9 @@ for(j in 1:length(iterator)){
         print(i)
         fname <- d[i]
         
+        # store names for later
+        name_date_time = substr(d[i],39,50)
+
         cmask <- h5read(fname,'/CloudMask')
         lon_cmask <- h5read(fname,'/Longitude2')
         lat_cmask <- h5read(fname,'/Latitude2')    
@@ -106,7 +109,7 @@ for(j in 1:length(iterator)){
     
         data = data.frame(lon=as.numeric(lon_cmask), lat = as.numeric(lat_cmask),cloud=as.numeric(cmask))
         coordinates(data) =~lon+lat
-        cloud = rasterize(x=data,y=example,field='cloud',fun='last',background=NA)
+        cloud = rasterize(x=data,y=example,field='cloud',fun='last',background=NA,na.rm=T)
         cloud@data@names = name_date_time
         cloud
     	}
@@ -119,6 +122,9 @@ for(j in 1:length(iterator)){
     output3 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
         print(i)
         fname = d[i]
+
+        # store names for later
+        name_date_time = substr(d[i],39,50)
         
         zenith = h5read(fname,'/LunarZenith')
         lon_cmask = h5read(fname,'/Longitude')
@@ -141,7 +147,7 @@ for(j in 1:length(iterator)){
         }else{
             data = data.frame(lon=as.numeric(lon_cmask), lat = as.numeric(lat_cmask),zenith=as.numeric(zenith))
             coordinates(data) =~lon+lat
-            zenith = rasterize(x=data,y=example,field='zenith',fun='last',background=NA)
+            zenith = rasterize(x=data,y=example,field='zenith',fun='last',background=NA,na.rm=T)
             zenith@data@names = name_date_time
             zenith
         }
@@ -155,7 +161,10 @@ for(j in 1:length(iterator)){
     output4 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
         print(i)
         fname = d[i]
-        
+       
+	# store names for later
+        name_date_time = substr(d[i],39,50)
+
         azimuth = h5read(fname,'/LunarAzimuth')
         lon_cmask = h5read(fname,'/Longitude')
         lat_cmask = h5read(fname,'/Latitude')    
@@ -177,13 +186,12 @@ for(j in 1:length(iterator)){
         }else{
             data = data.frame(lon=as.numeric(lon_cmask), lat = as.numeric(lat_cmask),azimuth=as.numeric(azimuth))
             coordinates(data) =~lon+lat
-            azimuth = rasterize(x=data,y=example,field='azimuth',fun='last',background=NA)
+            azimuth = rasterize(x=data,y=example,field='azimuth',fun='last',background=NA,na.rm=T)
             azimuth@data@names = name_date_time
             azimuth
         }
     }
     
-    save(output4, file=paste(getwd(),'/job_zen_', j,'_v3.RData',sep=""))
+    save(output4, file=paste(getwd(),'/job_azt_', j,'_v3.RData',sep=""))
     remove(output4)
-
 }
