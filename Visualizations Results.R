@@ -6,7 +6,7 @@ library(rgeos)
 
 
 # this scripts reads in raster files exported from grid_viirs_data (3).R
-setwd('C:\\Users\\mmann\\Desktop\\NightTimeData\\')
+setwd('R:\\Mann Research/India Night Time Lights/2015 v2/')
 
 
 
@@ -14,11 +14,20 @@ setwd('C:\\Users\\mmann\\Desktop\\NightTimeData\\')
 
 
 # read in data ------------------------------------------------------------
+    
+    # code to change names etc
+#     output_list=list.files(getwd(),pattern='X')
+#     
+#     for(i in 1:length(output_list)){
+#         file.rename(output_list[i],substr(output_list[i],2,30) )  #paste('2',substr(output_list[i],3,24),sep='')
+#     }
 
-# pull available files
-files = dir(pattern = '.tif')
-cld = files[grep('cld',files)]
-dnb = files[grep('dnb',files)]
+    
+    # pull available files
+    files = dir(pattern = '.tif')
+    cld = files[grep('cld',files)]
+    dnb = files[grep('dnb',files)]
+
 
 # create raster stacks  & extract data ----------------------------------------------------
 
@@ -101,10 +110,11 @@ ggplot(data,aes(x=date,y=log(value*1e9+1)))+geom_point()+scale_x_date(labels = d
     facet_wrap( ~ LOCATION+Ag.Rural, ncol = 2,scales = 'free_y')  
 
 
-write.csv(data,'C:/Users/mmann/Google Drive/India Night Lights/Data/MH-ESMI-Locations-DNB-output-1kmneighbors.csv')
+write.csv(data,'R:/Mann Research/India Night Time Lights/2015 v2/MH-ESMI-Locations-DNB-output-1kmneighbors.csv')
 
 
-
+# create subset for may
+subset(data, format.Date(data$date, "%m")=="05" & format.Date(data$date, "%y")=="15")
 
 
 
