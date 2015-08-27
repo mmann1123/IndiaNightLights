@@ -1,9 +1,9 @@
 
 # Run the following in bash before starting R
-#module load proj.4/4.8.0
-#module load gdal
-#module load R/3.0.2
-#module load gcc/4.9.0
+# module load proj.4/4.8.0
+# module load gdal
+# module load R/3.0.2
+# module load gcc/4.9.0
 # R
 
 
@@ -64,7 +64,7 @@ time_stamp_cld = strptime(time_stamp_cld,"%Y%j.%H%M")
 # Extract data for sites of interest --------------------------------------
 
 # define locations of interest
-locations = read.csv('C://Users/mmann/Google Drive/India Night Lights/Data/MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
+locations = read.csv('/groups/manngroup/India\ VIIRS/2015/MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
 jumba.df = data.frame(STATE='MH', DISTRICT.CITY="NA", LOCATION='Jumda',LAT=20.010094,LON=77.044271, Ag.Rural=T)
 locations=rbind(locations,jumba.df)
 
@@ -112,7 +112,75 @@ ggplot(data,aes(x=date,y=log(value*1e9+1)))+geom_point()+scale_x_date(labels = d
     facet_wrap( ~ LOCATION+Ag.Rural, ncol = 2,scales = 'free_y')  
 
 
-write.csv(data,'C:/Users/mmann/Google Drive/India Night Lights/Data/MH-ESMI-Locations-DNB-output-1kmneighbors.csv')
+write.csv(data,'./MH-ESMI-Locations-DNB-output-1kmneighbors.csv')
+
+
+
+# Lunar adjustments ------------------------------------------------------
+# try to remove cyclical lunar signal from cells
+
+# read in data
+setwd('/groups/manngroup/India\ VIIRS/2015')
+
+# pull available files
+files = dir(pattern = '.tif')
+cld = files[grep('cld',files)]
+dnb = files[grep('dnb',files)]
+zen = files[grep('zen',files)]
+azt = files[grep('azt',files)]
+
+
+# create raster stacks  & extract data
+cld_stack = stack(cld)
+dnb_stack = stack(dnb)
+zen_stack = stack(zen)
+azt_stack = stack(azt)
+
+
+# Extract dates
+time_stamp_dnb = gsub(x=names(dnb_stack),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
+time_stamp_dnb = strptime(time_stamp_dnb,"%Y%j.%H%M")
+time_stamp_cld = gsub(x=names(cld_stack),pattern = "(.*X)(.*)(.*_cld_v3)",replacement = "\\2")
+time_stamp_cld = strptime(time_stamp_cld,"%Y%j.%H%M")
+
+
+# not all stacks have same dates
+all.equal(time_stamp_dnb,time_stamp_cld)
+
+
+# limit stacks to common elements
+common_dnb = (time_stamp_dnb %in% intersect(time_stamp_dnb,time_stamp_cld))
+dnb_stack = dnb_stack[[ (1:length(common_dnb))[common_dnb] ]]
+common_cld = (time_stamp_cld %in% intersect(time_stamp_dnb,time_stamp_cld))
+cld_stack = cld_stack[[ (1:length(common_cld))[common_cld] ]]
+
+
+# remove cloud cells multicore  returns NA but runs fast!
+library(foreach)
+library(doParallel)
+registerDoParallel(16)
+
+
+# remove cloud cells multicore  returns NA but runs fast!
+foreach(i=1:dim(dnb_stack)[3]) %do% { dnb_stack[[i]][cld_stack[[i]]>1]=NA}
+
+
+
+# look at dnb and lunar time series
+ts_dnb  = as.numeric(extract(dnb_stack,100,100))
+ts_zen = as.numeric(extract(zen_stack,100,100))
+ts_azt = as.numeric(extract(azt_stack,100,100))
+
+
+plot( 1:length(na.omit(extract(dnb_stack,100,100))),na.omit(extract(dnb_stack,100,100)))
+
+
+data = data.frame(dnb = ts_dnb, zen = ts_zen, azt=ts_azt)
+data = na.omit(data)
+
+plot(1:length(data$dnb),data$dnb)
+resid = lm(dnb~zen+azt+zen:azt,data=(data))$fitted.values
+points( 1:length(resid),resid, col='red')
 
 
 
