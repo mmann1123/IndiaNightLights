@@ -249,10 +249,21 @@ data_urban$date.time = strptime(data_urban$date.time,"%Y%j.%H%M" )
 data3= data_urban[,c('date.time','dnb')]
 data3$dnb = data3$dnb*1e9
 row.names(data3) = 1:dim(data3)[1] 
-res = AnomalyDetectionTs(data3, max_anoms=0.02, direction='both', plot=TRUE)
+res = AnomalyDetectionTs(data3, max_anoms=0.03, direction='pos', plot=TRUE, 
+	piecewise_median_period_weeks=8,longterm=T)
 res$plot
 
 
+# impulse sateration https://cran.r-project.org/web/packages/gets/gets.pdf from felix
+library(zoo)
+library(gets)
+data4 = zoo(data_urban[,'dnb'],data_urban[,'date.time'])
+
+# add a time trend
+t = zoo(1:length(data4[,1]),data_urban[,'date.time'])
+
+sat = isat(data4, t.pval=min(0.01,(1/length(data4[,1]))),mxreg=t)
+plot(data4)
 
 
 # Stable Lights Map -------------------------------------------------------
