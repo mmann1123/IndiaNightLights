@@ -95,7 +95,7 @@ for(i in 1:length(output_list)){
         output3[[x]]=resample(output3[[x]], s, method="ngb") # limit to new extent and res
         
         writeRaster(output3[[x]], filename=paste(getwd(),'/',
-             output3[[x]]@data@names,'_zen_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+           substr(   output3[[x]]@data@names,2,13),'_zen_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
 }
 remove(output3)
 
@@ -117,7 +117,7 @@ for(i in 1:length(output_list)){
         output4[[x]]=resample(output4[[x]], s, method="ngb") # limit to new extent and res
         
         writeRaster(output4[[x]], filename=paste(getwd(),'/',
-            output4[[x]]@data@names,'_azt_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+            substr(   output4[[x]]@data@names,2,13),'_azt_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
 }
 remove(output4)
 
