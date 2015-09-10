@@ -15,7 +15,7 @@
 library(raster)
 library(rgdal)
 
-setwd("/groups/manngroup/India VIIRS/May2015/")
+setwd("/groups/manngroup/India VIIRS/2015/")
 
 # mararashtra extent westlimit=71.99; southlimit=15.03; eastlimit=81.51; northlimit=22.5
 # nice ideas on extent and resolution http://stackoverflow.com/questions/20733555/how-to-create-a-raster-brick-with-rasters-of-different-extents
