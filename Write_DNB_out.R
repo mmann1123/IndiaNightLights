@@ -4,10 +4,10 @@
 # Limit extent to Maharashstra
 
 # Run the following in bash before starting R
-#module load proj.4/4.8.0
-#module load gdal
-#module load R/3.0.2
-#module load gcc/4.9.0
+# module load proj.4/4.8.0
+# module load gdal
+# module load R/3.0.2
+# module load gcc/4.9.0
 # R
 
 
@@ -45,7 +45,8 @@ for(i in 1:length(output_list)){
         output[[x]]=resample(output[[x]], s, method="bilinear")
         
         writeRaster(output[[x]], filename=paste(getwd(),'/',
-                                                substr( output[[x]]@data@names,2,13),'_dnb_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+           substr( output[[x]]@data@names,2,13),'_dnb_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+
 }    
 remove(output1)
 
@@ -63,9 +64,10 @@ for(i in 1:length(output_list)){
     lapply(1:length(output2),function(x) if(class(output2[[x]])=='RasterLayer' & test_intersection(output2[[x]],s) ){  # avoid empty and non overlapping images
         print(x)
         output2[[x]]=resample(output2[[x]], s, method="ngb") # limit to new extent and res
-        
+
         writeRaster(output2[[x]], filename=paste(getwd(),'/',
-                                                 substr( output2[[x]]@data@names,2,13),'_cld_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+             substr( output2[[x]]@data@names,2,13),'_cld_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+
 }
 remove(output2)
 
@@ -86,7 +88,8 @@ for(i in 1:length(output_list)){
         output3[[x]]=resample(output3[[x]], s, method="ngb") # limit to new extent and res
         
         writeRaster(output3[[x]], filename=paste(getwd(),'/',
-                                                 output3[[x]]@data@names,'_zen_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+             output3[[x]]@data@names,'_zen_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+
 }
 remove(output3)
 
@@ -107,7 +110,8 @@ for(i in 1:length(output_list)){
         output4[[x]]=resample(output4[[x]], s, method="ngb") # limit to new extent and res
         
         writeRaster(output4[[x]], filename=paste(getwd(),'/',
-                                                 output4[[x]]@data@names,'_azt_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+            output4[[x]]@data@names,'_azt_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+
 }
 remove(output4)
 
@@ -119,3 +123,4 @@ remove(output4)
 #     file.rename(output_list[i],substr(output_list[i],2,30) )  #paste('2',substr(output_list[i],3,24),sep='')
 # }
 
+ 
