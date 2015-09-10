@@ -15,13 +15,20 @@
 library(raster)
 library(rgdal)
 
-setwd("/groups/manngroup/India VIIRS/2015/hdf/")
+setwd("/groups/manngroup/India VIIRS/May2015/")
 
 # mararashtra extent westlimit=71.99; southlimit=15.03; eastlimit=81.51; northlimit=22.5
 # nice ideas on extent and resolution http://stackoverflow.com/questions/20733555/how-to-create-a-raster-brick-with-rasters-of-different-extents
-e1 = extent(72, 81.50, 15, 22.5)
+e1 = extent(72, 81.50, 15, 22.5)  
+
+#figure out number of rows and columns to get close to 0.00675 resolution
+res = 0.00675
+cols = round((e1[2]-e1[1])/res,0)
+rows = round((e1[4]-e1[3])/res,0)
+
 # set a raster to resample to 
-s<-raster(e1, nrows=1000, ncols=1000, crs=CRS('+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0'))
+#   originally was nrows=1000, ncols=1000
+s<-raster(e1, nrows=rows, ncols=cols, crs=CRS('+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0'))
 
 test_intersection <- function(a,b){
     #reads in two rasters and tests for overlap T or F
@@ -48,7 +55,7 @@ for(i in 1:length(output_list)){
            substr( output[[x]]@data@names,2,13),'_dnb_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
 
 }    
-remove(output1)
+remove(output)
 
 
 # Write out cloud band data -------------------------------------------
@@ -61,7 +68,8 @@ for(i in 1:length(output_list)){
     if(length(output2)==0 ){ # check forempty lists
         warning(paste('error in ',output_list[i])); next}
     
-    lapply(1:length(output2),function(x) if(class(output2[[x]])=='RasterLayer' & test_intersection(output2[[x]],s) ){  # avoid empty and non overlapping images
+    lapply(1:length(output2),function(x) if(class(output2[[x]])=='RasterLayer' & test_intersection(output2[[x]],s) ){  
+	# avoid empty and non overlapping images
         print(x)
         output2[[x]]=resample(output2[[x]], s, method="ngb") # limit to new extent and res
 
@@ -83,7 +91,8 @@ for(i in 1:length(output_list)){
     if(length(output3)==0 ){ # check forempty lists
         warning(paste('error in ',output_list[i])); next}
     
-    lapply(1:length(output3),function(x) if(class(output3[[x]])=='RasterLayer' & test_intersection(output3[[x]],s) ){  # avoid empty and non overlapping images
+    lapply(1:length(output3),function(x) if(class(output3[[x]])=='RasterLayer' & test_intersection(output3[[x]],s) ){  
+	# avoid empty and non overlapping images
         print(x)
         output3[[x]]=resample(output3[[x]], s, method="ngb") # limit to new extent and res
         
@@ -105,7 +114,8 @@ for(i in 1:length(output_list)){
     if(length(output4)==0 ){ # check forempty lists
         warning(paste('error in ',output_list[i])); next}
     
-    lapply(1:length(output4),function(x) if(class(output4[[x]])=='RasterLayer' & test_intersection(output4[[x]],s) ){  # avoid empty and non overlapping images
+    lapply(1:length(output4),function(x) if(class(output4[[x]])=='RasterLayer' & test_intersection(output4[[x]],s) ){  
+	# avoid empty and non overlapping images
         print(x)
         output4[[x]]=resample(output4[[x]], s, method="ngb") # limit to new extent and res
         
