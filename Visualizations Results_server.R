@@ -285,8 +285,9 @@ names(mean_dnb)=c('location','mean_dnb')
 dnb_values = join(dnb_values, mean_dnb,by='location')
 dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mean_dnb
 
-mean_lm = lm(demean_dnb~0+ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=dnb_values) # omit intercept
+mean_lm = lm(demean_dnb~0+I(mean_dnb>1.5e-8)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase),data=dnb_values) # omit intercept
 summary(mean_lm)
+#I(mean_dnb>1e-8)
 
 resid3 = actual
 resid3$pred_actual = 'resid+const'
@@ -320,10 +321,6 @@ ggplot(combined[combined$pred_actual == 'resid+const',], aes(count, dnb,colour=p
 
 
 
-
-
-
-
 # comare acutal and resid plus constant  pooled  # DONT USE POOLED
 pool = lm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=dnb_values)
 summary(pool)
@@ -343,6 +340,15 @@ head(resid2)
 combined3 = rbind(actual[actual$location==village,],resid2   )
 
 ggplot(combined3, aes(count, dnb,colour=pred_actual))+geom_point()
+
+
+
+
+
+
+
+
+
 
 
 
