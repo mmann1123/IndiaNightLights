@@ -117,6 +117,8 @@ write.csv(data,'./MH-ESMI-Locations-DNB-output-1kmneighbors.csv')
 
 
 
+
+
 # Lunar adjustments ------------------------------------------------------
 # try to remove cyclical lunar signal from cells
 
@@ -343,7 +345,16 @@ ggplot(combined3, aes(count, dnb,colour=pred_actual))+geom_point()
 
 
 
+
+
+
+
+
+
+
+
 # Demeaned regression on 1000 point sample -------------------------------------------
+
 PolygonFromExtent <-
 function(ext, asSpatial=T, crs=CRS(NA), id=1)
 {
@@ -379,6 +390,42 @@ function(ext, asSpatial=T, crs=CRS(NA), id=1)
 set.seed(2)
 sampled = spsample(PolygonFromExtent(extent(72, 81.50, 15, 22.5),crs=CRS('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs ')),n=1000,type='random')
 
+# extract data (and surrounding area)
+dnb_values = extract(dnb_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
+zen_values = extract(zen_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
+azt_values = extract(azt_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
+
+time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
+
+
+# put into long form
+put_in_long <- function(wide_data,abreviation){
+        names(wide_data) = time_stamp_extract
+        wide_data$location = locations$LOCATION
+        wide_data = subset(wide_data,select=-c(ID))
+        wide_data <- melt(wide_data )
+        names(wide_data)=c('location','date.time',paste(abreviation))
+        head(wide_data)
+        return(wide_data)
+}
+
+dnb_values=put_in_long(dnb_values,'dnb')
+zen_values= put_in_long(zen_values,'zen')
+azt_values=put_in_long(azt_values,'azt')
+
+
+
+# read in moon phase (year doy time moon_illum_frac moon_phase_angle)
+phase = read.csv('moon_info.csv')
+names(phase)=c('year','doy','time', 'illum', 'phase')
+phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
+
+
+# add moon phase
+library(plyr)
+dnb_values = join(dnb_values,zen_values)
+dnb_values = join(dnb_values,azt_values)
+dnb_values = join(dnb_values, phase)
 
 
 
