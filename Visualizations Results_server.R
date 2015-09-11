@@ -142,10 +142,15 @@ time_stamp_dnb = gsub(x=names(dnb_stack),pattern = "(.*X)(.*)(.*_dnb_v3)",replac
 time_stamp_dnb = strptime(time_stamp_dnb,"%Y%j.%H%M")
 time_stamp_cld = gsub(x=names(cld_stack),pattern = "(.*X)(.*)(.*_cld_v3)",replacement = "\\2")
 time_stamp_cld = strptime(time_stamp_cld,"%Y%j.%H%M")
-
+time_stamp_zen = gsub(x=names(zen_stack),pattern = "(.*X)(.*)(.*_zen_v3)",replacement = "\\2")
+time_stamp_zen = strptime(time_stamp_zen,"%Y%j.%H%M")
+time_stamp_azt = gsub(x=names(azt_stack),pattern = "(.*X)(.*)(.*_azt_v3)",replacement = "\\2")
+time_stamp_azt = strptime(time_stamp_azt,"%Y%j.%H%M")
 
 # not all stacks have same dates
 all.equal(time_stamp_dnb,time_stamp_cld)
+all.equal(time_stamp_dnb,time_stamp_zen)
+all.equal(time_stamp_dnb,time_stamp_azt)
 
 
 # limit stacks to common elements
@@ -164,9 +169,112 @@ registerDoParallel(32)
 # remove cloud cells multicore  returns NA but runs fast!
 #foreach(i=1:dim(dnb_stack)[3]) %do% { dnb_stack[[i]][cld_stack[[i]]>1]=NA}
 #save(dnb_stack,file = 'dnb_stack_wo_cld.RData')
+#foreach(i=1:dim(zen_stack)[3]) %do% { zen_stack[[i]][cld_stack[[i]]>1]=NA}
+#save(zen_stack,file = 'zen_stack_wo_cld.RData')
+#foreach(i=1:dim(azt_stack)[3]) %do% { azt_stack[[i]][cld_stack[[i]]>1]=NA}
+#save(azt_stack,file = 'azt_stack_wo_cld.RData')
+
+
 load('dnb_stack_wo_cld.RData')
+load('zen_stack_wo_cld.RData')
+load('azt_stack_wo_cld.RData')
 
 
+
+# Extract data for sites of interest --------------------------------------
+
+# define locations of interest
+locations = read.csv('MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
+jumba.df = data.frame(STATE='MH', DISTRICT.CITY="NA", LOCATION='Jumda',LAT=20.010094,LON=77.044271, Ag.Rural=T)
+locations=rbind(locations,jumba.df)
+
+coordinates(locations)= ~LON+LAT
+proj4string(locations) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+
+# extract data (and surrounding area)
+dnb_values = extract(dnb_stack,locations,buffer=1.2e3,fun= function(x) mean(x,na.rm=T), df=T)
+zen_values = extract(zen_stack,locations,buffer=1.2e3,fun= function(x) mean(x,na.rm=T), df=T)
+azt_values = extract(azt_stack,locations,buffer=1.2e3,fun= function(x) mean(x,na.rm=T), df=T)
+
+time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
+
+
+# put into long form
+names(dnb_values) = time_stamp_extract
+dnb_values$location = locations$LOCATION
+dnb_values = subset(dnb_values,select=-c(ID))
+dnb_values <- melt(dnb_values )
+names(dnb_values)=c('location','date.time','dnb')
+head(dnb_values)
+
+names(zen_values) = time_stamp_extract
+zen_values$location = locations$LOCATION
+zen_values = subset(zen_values,select=-c(ID))
+zen_values <- melt(zen_values )
+names(zen_values)=c('location','date.time','zen')
+head(zen_values)
+
+names(azt_values) = time_stamp_extract
+azt_values$location = locations$LOCATION
+azt_values = subset(azt_values,select=-c(ID))
+azt_values <- melt(azt_values )
+names(azt_values)=c('location','date.time','azt')
+head(azt_values)
+
+
+# read in moon phase (year doy time moon_illum_frac moon_phase_angle)
+phase = read.csv('moon_info.csv')
+names(phase)=c('year','doy','time', 'illum', 'phase')
+phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
+
+
+# add moon phase
+library(plyr)
+dnb_values = join(dnb_values,zen_values)
+dnb_values = join(dnb_values,azt_values)
+dnb_values = join(dnb_values, phase)
+head(dnb_values,50)
+
+
+#dnb_values = na.omit(dnb_values)      # to help plot raw data and modeled
+
+# run regressions 
+library(splines)
+library(plm)
+
+#fixed <- plm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=dnb_values, index=c("location", "date.time"), model="within")
+#summary(fixed)
+
+fixed = lm(dnb~factor(location)+ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=dnb_values)
+summary(fixed)
+
+
+# compare actual and predicted
+actual = fixed$model
+actual$count = 1:dim(actual)[1]
+actual$pred_actual = 'actual'
+pred = fixed$model
+pred$count = 1:dim(pred)[1]
+pred$dnb = fixed$fitted.values
+pred$pred_actual = 'predicted'
+
+combined = rbind(actual,pred)
+
+# plot 
+
+ggplot(combined, aes(count, dnb,colour=pred_actual))+geom_point()+ 
+  facet_wrap(~ location)
+
+
+
+
+
+
+
+
+###########################################################
+###########################################################
+###########################################################
 
 # look at dnb and lunar time series
 ts_dnb  = (extract(dnb_stack,100,100))
