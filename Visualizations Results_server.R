@@ -176,6 +176,8 @@ registerDoParallel(32)
 #save(azt_stack,file = 'azt_stack_wo_cld.RData')
 
 
+setwd('/groups/manngroup/India\ VIIRS/2015')
+
 load('dnb_stack_wo_cld.RData')    # start here cloud free images stored here. 
 load('zen_stack_wo_cld.RData')
 load('azt_stack_wo_cld.RData')
@@ -243,10 +245,10 @@ summary(fixed)
 
 
 # compare actual and predicted
-actual = fixed$model
+actual = na.omit(dnb_values)
 actual$count = 1:dim(actual)[1]
 actual$pred_actual = 'actual'
-pred = fixed$model
+pred = na.omit(dnb_values)
 pred$count = 1:dim(pred)[1]
 pred$dnb = fixed$fitted.values
 pred$pred_actual = 'predicted'
@@ -256,80 +258,17 @@ combined = rbind(actual,pred)
 # plot 
 
 ggplot(combined, aes(count, dnb,colour=pred_actual))+geom_point()+ 
-  facet_wrap(~ location)
+  facet_wrap(~ location, scales="free_y")
 
 
-
-
-
-
-
-
-###########################################################
-###########################################################
-###########################################################
-
-# look at dnb and lunar time series
-ts_dnb  = (extract(dnb_stack,100,100))
-ts_zen =  (extract(zen_stack,100,100))
-ts_azt =  (extract(azt_stack,100,100))
-time_stamp_extract = gsub(x=colnames(ts_dnb),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
-
-
-# compile data
-data = data.frame(date.time = time_stamp_extract,dnb = as.numeric(ts_dnb), zen = as.numeric(ts_zen), 
-	azt=as.numeric(ts_azt))
-
-# read in moon phase (year doy time moon_illum_frac moon_phase_angle)
-phase = read.csv('/groups/manngroup/India\ VIIRS/2015/moon_info.csv')
-names(phase)=c('year','doy','time', 'illum', 'phase')
-phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
-
-# add moon phase
-library(plyr)
-data = join(data, phase)
-data = na.omit(data)      # to help plot raw data and modeled
-
-# compare time series and modeled
-library(splines)
-
-
-plot(1:length(data$dnb),data$dnb)
-lm1 = lm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=(data))
-resid = lm1$fitted.values #residuals  #fitted.values
-summary(lm1)
-points( 1:length(resid),resid, col='red')
-
-
-### pull urban data
-
-
-# look at dnb and lunar time series
-urb = data.frame(lat=17.35875,lon=78.45525)
-coordinates(urb)=~lon+lat
-
-ts_dnb  = extract(dnb_stack,urb )
-ts_zen =  extract(zen_stack,urb  )
-ts_azt =  extract(azt_stack,urb)
-time_stamp_extract = gsub(x=colnames(ts_dnb),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
-
-
-# compile data
-data_urban = data.frame(date.time = time_stamp_extract,dnb = as.numeric(ts_dnb), zen = as.numeric(ts_zen),
-        azt=as.numeric(ts_azt))
-
-# add moon phase
-data_urban = join(data_urban, phase)
-data_urban = na.omit(data_urban)      # to help plot raw data and modeled
-
-# plot urban 
+# plot urban
 plot(1:length(data_urban$dnb),data_urban$dnb)
 lm_u = lm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=(data_urban))
 resid_u = lm_u$fitted.values #residuals  #fitted.values
 summary(lm_u)
 lunar = predict(lm1,data_urban)
 #points( 1:length(resid_u),resid_u, col='red')
-points(1:length(resid_u),lunar,col='green')  # predictions based on rural 
+points(1:length(resid_u),lunar,col='green')  # predictions based on rural
 #points(1:length(resid_u),(lm_u$residuals+lm_u$coefficients),col='orange')
 points(1:length(resid_u),data_urban$dnb-lunar,col='blue')  # predictions based on rural
 
@@ -338,8 +277,13 @@ points(1:length(resid_u),data_urban$dnb-lunar,col='blue')  # predictions based o
 
 
 
+
+
+
 # Outlier detection  ----------------------------------------------------------
 # https://blog.twitter.com/2015/introducing-practical-and-robust-anomaly-detection-in-a-time-series
+
+
 
 # install.packages("devtools")
 # devtools::install_github("twitter/AnomalyDetection")
