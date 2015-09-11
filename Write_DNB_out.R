@@ -53,6 +53,7 @@ for(i in 1:length(output_list)){
         
         writeRaster(output[[x]], filename=paste(getwd(),'/',
            substr( output[[x]]@data@names,2,13),'_dnb_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+
 }    
 remove(output)
 
@@ -71,9 +72,10 @@ for(i in 1:length(output_list)){
 	# avoid empty and non overlapping images
         print(x)
         output2[[x]]=resample(output2[[x]], s, method="ngb") # limit to new extent and res
-       
+
         writeRaster(output2[[x]], filename=paste(getwd(),'/',
-            substr( output2[[x]]@data@names,2,13),'_cld_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+             substr( output2[[x]]@data@names,2,13),'_cld_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+
 }
 remove(output2)
 
@@ -96,6 +98,7 @@ for(i in 1:length(output_list)){
         
         writeRaster(output3[[x]], filename=paste(getwd(),'/',
            substr(   output3[[x]]@data@names,2,13),'_zen_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+
 }
 remove(output3)
 
@@ -129,5 +132,4 @@ remove(output4)
 #     file.rename(output_list[i],substr(output_list[i],2,30) )  #paste('2',substr(output_list[i],3,24),sep='')
 # }
 
-
-
+ 

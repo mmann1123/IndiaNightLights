@@ -14,6 +14,7 @@ library(ggplot2)
 library(scales)
 library(reshape2)
 library(rgeos)
+library(splines)
 
 
 # this scripts reads in raster files exported from grid_viirs_data (3).R
@@ -175,7 +176,7 @@ registerDoParallel(32)
 #save(azt_stack,file = 'azt_stack_wo_cld.RData')
 
 
-load('dnb_stack_wo_cld.RData')
+load('dnb_stack_wo_cld.RData')    # start here cloud free images stored here. 
 load('zen_stack_wo_cld.RData')
 load('azt_stack_wo_cld.RData')
 
@@ -200,26 +201,20 @@ time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v3)
 
 
 # put into long form
-names(dnb_values) = time_stamp_extract
-dnb_values$location = locations$LOCATION
-dnb_values = subset(dnb_values,select=-c(ID))
-dnb_values <- melt(dnb_values )
-names(dnb_values)=c('location','date.time','dnb')
-head(dnb_values)
+put_in_long <- function(wide_data,abreviation){
+	names(wide_data) = time_stamp_extract
+	wide_data$location = locations$LOCATION
+	wide_data = subset(wide_data,select=-c(ID))
+	wide_data <- melt(wide_data )
+	names(wide_data)=c('location','date.time',paste(abreviation))
+	head(wide_data)
+	return(wide_data)
+}
 
-names(zen_values) = time_stamp_extract
-zen_values$location = locations$LOCATION
-zen_values = subset(zen_values,select=-c(ID))
-zen_values <- melt(zen_values )
-names(zen_values)=c('location','date.time','zen')
-head(zen_values)
+dnb_values=put_in_long(dnb_values,'dnb')
+zen_values= put_in_long(zen_values,'zen')
+azt_values=put_in_long(azt_values,'azt')
 
-names(azt_values) = time_stamp_extract
-azt_values$location = locations$LOCATION
-azt_values = subset(azt_values,select=-c(ID))
-azt_values <- melt(azt_values )
-names(azt_values)=c('location','date.time','azt')
-head(azt_values)
 
 
 # read in moon phase (year doy time moon_illum_frac moon_phase_angle)
@@ -233,10 +228,8 @@ library(plyr)
 dnb_values = join(dnb_values,zen_values)
 dnb_values = join(dnb_values,azt_values)
 dnb_values = join(dnb_values, phase)
-head(dnb_values,50)
+head(dnb_values,20)
 
-
-#dnb_values = na.omit(dnb_values)      # to help plot raw data and modeled
 
 # run regressions 
 library(splines)
