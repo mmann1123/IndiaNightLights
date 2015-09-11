@@ -195,9 +195,9 @@ coordinates(locations)= ~LON+LAT
 proj4string(locations) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
 
 # extract data (and surrounding area)
-dnb_values = extract(dnb_stack,locations,buffer=1.2e3,fun= function(x) mean(x,na.rm=T), df=T)
-zen_values = extract(zen_stack,locations,buffer=1.2e3,fun= function(x) mean(x,na.rm=T), df=T)
-azt_values = extract(azt_stack,locations,buffer=1.2e3,fun= function(x) mean(x,na.rm=T), df=T)
+dnb_values = extract(dnb_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
+zen_values = extract(zen_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
+azt_values = extract(azt_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
 
 time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
 
@@ -235,16 +235,13 @@ head(dnb_values,20)
 
 # run regressions 
 library(splines)
-library(plm)
-
-#fixed <- plm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=dnb_values, index=c("location", "date.time"), model="within")
-#summary(fixed)
 
 fixed = lm(dnb~factor(location)+ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=dnb_values)
 summary(fixed)
 
 
 # compare actual and predicted
+
 actual = na.omit(dnb_values)
 actual$count = 1:dim(actual)[1]
 actual$pred_actual = 'actual'
@@ -255,10 +252,106 @@ pred$pred_actual = 'predicted'
 
 combined = rbind(actual,pred)
 
-# plot 
-
+# plot actual vs predicted
 ggplot(combined, aes(count, dnb,colour=pred_actual))+geom_point()+ 
   facet_wrap(~ location, scales="free_y")
+
+
+# compare actual and resid plus constant for FE regression  # DON'T USE FE
+resid = na.omit(dnb_values)
+resid$count = 1:dim(resid)[1]
+resid$pred_actual = 'resid+const'
+# get intercepts for each village join to data
+nam = names(fixed$coefficient)[grep('factor',names(fixed$coefficients))]
+nam = substr(nam,17,31)
+coeff = data.frame(location = nam, FE = fixed$coefficient[grep('factor',names(fixed$coefficients))]) 
+resid = join(resid,coeff)
+resid$dnb = fixed$residuals #+ fixed$coefficients[1] +resid$FE
+head(resid)
+
+combined2 = rbind(actual,subset(resid,select=-c(FE))   )
+
+ggplot(combined2, aes(count, dnb,colour=pred_actual))+geom_point()+
+  facet_wrap(~ location, scales="free_y")
+
+
+
+
+
+# compare actual and resid plus constant for demeaned regression  
+
+mean_dnb = aggregate(dnb~location,data=dnb_values,function(x) mean(x,na.rm=T))
+names(mean_dnb)=c('location','mean_dnb')
+dnb_values = join(dnb_values, mean_dnb,by='location')
+dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mean_dnb
+
+mean_lm = lm(demean_dnb~0+ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=dnb_values) # omit intercept
+summary(mean_lm)
+
+resid3 = actual
+resid3$pred_actual = 'resid+const'
+resid3$count = 1:dim(resid3)[1]
+resid3 = join(resid3,mean_dnb,by='location')
+resid3$dnb = mean_lm$residuals  +resid3$mean_dnb  
+head(resid3)
+
+pred3 = actual
+pred3$pred_actual = 'predicted'
+pred3$count = 1:dim(pred3)[1]
+pred3 = join(pred3,mean_dnb,by='location')
+pred3$dnb = mean_lm$fitted.values+pred3$mean_dnb
+head(pred3)
+
+
+combined = rbind.fill(actual,resid3,pred3)
+
+# plot actual vs predicted
+ggplot(combined, aes(count, dnb,colour=pred_actual))+geom_point()+
+  facet_wrap(~ location, scales="free_y")
+
+ggplot(combined[combined$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
+  facet_wrap(~ location, scales="free_y")
+
+ggplot(combined[combined$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
+  facet_wrap(~ location)
+
+ggplot(combined[combined$pred_actual == 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
+  facet_wrap(~ location, scales="free_y")
+
+
+
+
+
+
+
+# comare acutal and resid plus constant  pooled  # DONT USE POOLED
+pool = lm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=dnb_values)
+summary(pool)
+
+
+# comare acutal and resid plus constant for linear regression
+village = 'Tilak Nagar'
+ind = lm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,
+	data=dnb_values[dnb_values$location==village,])
+summary(ind)
+resid2 = actual[actual$location==village,]
+resid2$pred_actual = 'resid+const'
+resid2$dnb = ind$residuals + ind$coefficients[1]
+head(resid2)
+
+
+combined3 = rbind(actual[actual$location==village,],resid2   )
+
+ggplot(combined3, aes(count, dnb,colour=pred_actual))+geom_point()
+
+
+
+
+
+
+
+# Remove Lunar Cycle for raster stacks ------------------------------------------------
+
 
 
 # plot urban
