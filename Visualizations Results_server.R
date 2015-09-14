@@ -238,7 +238,12 @@ head(dnb_values,20)
 # run regressions 
 library(splines)
 
-fixed = lm(dnb~factor(location)+ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=dnb_values)
+fixed = lm(dnb~factor(location)+ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+
+    zen:phase+azt:phase,data=dnb_values)
+
+fixed = lm(dnb~factor(location)+zen+azt+phase+zen:azt+
+   zen:phase^2+azt:phase^2,data=dnb_values)
+
 summary(fixed)
 
 
@@ -259,22 +264,22 @@ ggplot(combined, aes(count, dnb,colour=pred_actual))+geom_point()+
   facet_wrap(~ location, scales="free_y")
 
 
-# compare actual and resid plus constant for FE regression  # DON'T USE FE
-resid = na.omit(dnb_values)
-resid$count = 1:dim(resid)[1]
-resid$pred_actual = 'resid+const'
-# get intercepts for each village join to data
-nam = names(fixed$coefficient)[grep('factor',names(fixed$coefficients))]
-nam = substr(nam,17,31)
-coeff = data.frame(location = nam, FE = fixed$coefficient[grep('factor',names(fixed$coefficients))]) 
-resid = join(resid,coeff)
-resid$dnb = fixed$residuals #+ fixed$coefficients[1] +resid$FE
-head(resid)
-
-combined2 = rbind(actual,subset(resid,select=-c(FE))   )
-
-ggplot(combined2, aes(count, dnb,colour=pred_actual))+geom_point()+
-  facet_wrap(~ location, scales="free_y")
+## compare actual and resid plus constant for FE regression  # DON'T USE FE
+#resid = na.omit(dnb_values)
+#resid$count = 1:dim(resid)[1]
+#resid$pred_actual = 'resid+const'
+## get intercepts for each village join to data
+#nam = names(fixed$coefficient)[grep('factor',names(fixed$coefficients))]
+#nam = substr(nam,17,31)
+#coeff = data.frame(location = nam, FE = fixed$coefficient[grep('factor',names(fixed$coefficients))]) 
+#resid = join(resid,coeff)
+#resid$dnb = fixed$residuals #+ fixed$coefficients[1] +resid$FE
+#head(resid)
+#
+#combined2 = rbind(actual,subset(resid,select=-c(FE))   )
+#
+#ggplot(combined2, aes(count, dnb,colour=pred_actual))+geom_point()+
+#  facet_wrap(~ location, scales="free_y")
 
 
 
@@ -287,9 +292,15 @@ names(mean_dnb)=c('location','mean_dnb')
 dnb_values = join(dnb_values, mean_dnb,by='location')
 dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mean_dnb
 
-mean_lm = lm(demean_dnb~0+I(mean_dnb>1.5e-8)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase),data=dnb_values) # omit intercept
+mean_lm = lm(demean_dnb~0+I(mean_dnb>1.5e-8)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+
+      zen:azt+poly(zen:phase,2)+azt:phase),data=dnb_values) # omit intercept
+
+mean_lm = lm(demean_dnb~0+I(mean_dnb>1.5e-8)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+
+      zen*azt+ns(zen*phase,3)+ns(azt*phase,3)),data=dnb_values) # omit intercept
+
 summary(mean_lm)
 #I(mean_dnb>1e-8)
+
 
 resid3 = actual
 resid3$pred_actual = 'resid+const'
@@ -322,26 +333,39 @@ ggplot(combined[combined$pred_actual == 'resid+const',], aes(count, dnb,colour=p
   facet_wrap(~ location, scales="free_y")
 
 
+# test if residual is white noise
+#H0: The data are independently distributed (i.e. the correlations in the population from which the sample is taken are 0, so that any observed correl$
+#Ha: The data are not independently distributed; they exhibit serial correlation.
 
-# comare acutal and resid plus constant  pooled  # DONT USE POOLED
-pool = lm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=dnb_values)
-summary(pool)
-
-
-# comare acutal and resid plus constant for linear regression
-village = 'Tilak Nagar'
-ind = lm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,
-	data=dnb_values[dnb_values$location==village,])
-summary(ind)
-resid2 = actual[actual$location==village,]
-resid2$pred_actual = 'resid+const'
-resid2$dnb = ind$residuals + ind$coefficients[1]
-head(resid2)
+library(zoo)
+for (location in as.character(unique(combined$location))){
+   test_data = combined[combined$location==location,]
+   test_data_ag = aggregate(dnb~date.time,data=test_data, FUN=mean)
+   test_data_ts = zoo(test_data_ag$dnb,test_data_ag$date.time)
+   print( Box.test(test_data_ts, lag = 1, type = c("Ljung-Box"), fitdf = 0))
+  }
 
 
-combined3 = rbind(actual[actual$location==village,],resid2   )
 
-ggplot(combined3, aes(count, dnb,colour=pred_actual))+geom_point()
+## comare acutal and resid plus constant  pooled  # DONT USE POOLED
+#pool = lm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=dnb_values)
+#summary(pool)
+#
+#
+## comare acutal and resid plus constant for linear regression
+#village = 'Tilak Nagar'
+#ind = lm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,
+#	data=dnb_values[dnb_values$location==village,])
+#summary(ind)
+#resid2 = actual[actual$location==village,]
+#resid2$pred_actual = 'resid+const'
+#resid2$dnb = ind$residuals + ind$coefficients[1]
+#head(resid2)
+#
+#
+#combined3 = rbind(actual[actual$location==village,],resid2   )
+#
+#ggplot(combined3, aes(count, dnb,colour=pred_actual))+geom_point()
 
 
 
@@ -355,12 +379,10 @@ ggplot(combined3, aes(count, dnb,colour=pred_actual))+geom_point()
 
 # Demeaned regression on 1000 point sample -------------------------------------------
 
-PolygonFromExtent <-
-function(ext, asSpatial=T, crs=CRS(NA), id=1)
+PolygonFromExtent <- function(ext, asSpatial=T, crs=CRS(NA), id=1)
 {
   if(class(ext)== "rasterLayer")
-  {
-    # if raster supplied determine extent and crs then proceed
+  {# if raster supplied determine extent and crs then proceed
     crs <- ext@crs
     ext <- extent(ext)
   }
@@ -369,39 +391,29 @@ function(ext, asSpatial=T, crs=CRS(NA), id=1)
 	x2 <- ext@xmax
 	y1 <- ext@ymin
 	y2<-ext@ymax
-	
-	coords <- matrix(c(x1, y1, 
-					   x1, y2,
-					   x2, y2,
-					   x2, y1,
-					   x1, y1), ncol=2, byrow=T)
-					 
+	coords <- matrix(c(x1, y1,  x1, y2,  x2, y2, x2, y1, x1, y1), ncol=2, byrow=T)
 	poly <- Polygon(coords)
 	if(asSpatial)
-	{
-		spPoly <- SpatialPolygons(list(Polygons(list(poly), ID=id)), proj4string=crs)
-		return(spPoly)
-
-	}
+	{ spPoly <- SpatialPolygons(list(Polygons(list(poly), ID=id)), proj4string=crs)
+	  return(spPoly)}
 	return(poly)
-	
 }
 
 set.seed(2)
-sampled = spsample(PolygonFromExtent(extent(72, 81.50, 15, 22.5),crs=CRS('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs ')),n=1000,type='random')
+sampled = spsample(PolygonFromExtent(extent(72, 81.50, 15, 22.5),crs=CRS('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs ')),n=10000,type='random')
 
 # extract data (and surrounding area)
-dnb_values = extract(dnb_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
-zen_values = extract(zen_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
-azt_values = extract(azt_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
+dnb_values = extract(dnb_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
+zen_values = extract(zen_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)
+azt_values = extract(azt_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)
 
 time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
 
 
 # put into long form
-put_in_long <- function(wide_data,abreviation){
+put_in_long2 <- function(wide_data,abreviation){
         names(wide_data) = time_stamp_extract
-        wide_data$location = locations$LOCATION
+        wide_data$location = row.names(wide_data)
         wide_data = subset(wide_data,select=-c(ID))
         wide_data <- melt(wide_data )
         names(wide_data)=c('location','date.time',paste(abreviation))
@@ -409,10 +421,9 @@ put_in_long <- function(wide_data,abreviation){
         return(wide_data)
 }
 
-dnb_values=put_in_long(dnb_values,'dnb')
-zen_values= put_in_long(zen_values,'zen')
-azt_values=put_in_long(azt_values,'azt')
-
+dnb_values=put_in_long2(dnb_values,'dnb')
+zen_values= put_in_long2(zen_values,'zen')
+azt_values=put_in_long2(azt_values,'azt')
 
 
 # read in moon phase (year doy time moon_illum_frac moon_phase_angle)
@@ -427,6 +438,62 @@ dnb_values = join(dnb_values,zen_values)
 dnb_values = join(dnb_values,azt_values)
 dnb_values = join(dnb_values, phase)
 
+
+# compare actual and resid plus constant for demeaned regression
+
+mean_dnb = aggregate(dnb~location,data=dnb_values,function(x) mean(x,na.rm=T))
+names(mean_dnb)=c('location','mean_dnb')
+dnb_values = join(dnb_values, mean_dnb,by='location')
+dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mean_dnb
+
+mean_lm = lm(demean_dnb~0+I(mean_dnb>1.5e-8)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+
+      zen:azt+poly(zen:phase,2)+azt:phase),data=dnb_values) # omit intercept
+
+mean_lm = lm(demean_dnb~0+I(mean_dnb<0.5e-8)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+
+      zen*azt+ns(zen*phase,3)+ns(azt*phase,3))
+       +I(mean_dnb>1.5e-8)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+
+      zen*azt+ns(zen*phase,3)+ns(azt*phase,3)),data=dnb_values) 
+
+summary(mean_lm)
+
+# look at distribution of values
+qplot(mean_dnb, data=mean_dnb, geom="histogram",binwidth=diff(range(mean_dnb$mean_dnb))/100)
+qplot(mean_dnb, data=mean_dnb, geom="histogram",binwidth=diff(range(mean_dnb$mean_dnb))/100)+coord_cartesian(xlim = c(0,5e-8))
+
+table(cut(mean_dnb$mean_dnb, breaks=c(0, 1e-9,,1e-8,1.5e-8,2e-8,10), include.lowest=TRUE))
+quantile(mean_dnb$mean_dnb)
+
+
+
+resid3 = actual
+resid3$pred_actual = 'resid+const'
+resid3$count = 1:dim(resid3)[1]
+resid3 = join(resid3,mean_dnb,by='location')
+resid3$dnb = mean_lm$residuals  +resid3$mean_dnb
+head(resid3)
+
+pred3 = actual
+pred3$pred_actual = 'predicted'
+pred3$count = 1:dim(pred3)[1]
+pred3 = join(pred3,mean_dnb,by='location')
+pred3$dnb = mean_lm$fitted.values+pred3$mean_dnb
+head(pred3)
+
+
+combined = rbind.fill(actual,resid3,pred3)
+
+# plot actual vs predicted
+ggplot(combined, aes(count, dnb,colour=pred_actual))+geom_point()+
+  facet_wrap(~ location, scales="free_y")
+
+ggplot(combined[combined$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
+  facet_wrap(~ location, scales="free_y")
+
+ggplot(combined[combined$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
+  facet_wrap(~ location)
+
+ggplot(combined[combined$pred_actual == 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
+  facet_wrap(~ location, scales="free_y")
 
 
 
