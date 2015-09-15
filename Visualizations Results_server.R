@@ -15,6 +15,8 @@ library(scales)
 library(reshape2)
 library(rgeos)
 library(splines)
+library(flexclust)   # allow for multidimentional clustering with predict function
+library(sampling)
 
 
 # this scripts reads in raster files exported from grid_viirs_data (3).R
@@ -371,7 +373,7 @@ ggplot(combined[combined$pred_actual == 'resid+const',], aes(count, dnb,colour=p
 
 
 
-
+############################################################################################
 
 
 
@@ -438,23 +440,22 @@ zen_values= put_in_long2(zen_values,'zen')
 azt_values=put_in_long2(azt_values,'azt')
 
 
+
+# add moon phase
+
 # read in moon phase (year doy time moon_illum_frac moon_phase_angle)
 phase = read.csv('moon_info.csv')
 names(phase)=c('year','doy','time', 'illum', 'phase')
 phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
-
-
-# add moon phase
-
 library(plyr)
-dnb_values = join(dnb_values,zen_values)
+dnb_values = join(dnb_values,zen_values) # add moon characteristics to dnb values
 dnb_values = join(dnb_values,azt_values)
 dnb_values = join(dnb_values, phase)
 
 
-# find k-means = 3 groups based on dnb values (based on mean and sd of values)
-library(flexclust)   # allow for multidimentional clustering with predict function
-library(sampling)
+
+# find k-means = 3 groups based on dnb values (based on mean  of values)
+
 na_dnb = na.omit(dnb_values)
 # cluster based on mean and sd of data 
 sd_dnb = aggregate(dnb~location,data=na_dnb,function(x) sd(x,na.rm=T))
@@ -467,33 +468,20 @@ na_dnb$quantile = cut(na_dnb$mn_dnb,quantile(na_dnb[,'mn_dnb']))
 set.seed(2)
 s=strata(na_dnb,'quantile',size=c(250,250,250,250,1), method="srswor") # create strata based on quantiles
 na_dnb_sample = getdata( na_dnb,s)
-cl1 = kcca(na_dnb_sample[,c('mn_dnb','sd_dnb')], k=5, kccaFamily("kmeans"))
-pred_test = predict(cl1, newdata=na_dnb[,c('mn_dnb','sd_dnb'),drop=F])
+cl1 = kcca(na_dnb_sample[,c('mn_dnb')], k=3, kccaFamily("kmeans"))
+na_dnb$kmn = predict(cl1, newdata=na_dnb[,c('mn_dnb'),drop=F])
+# add mean sd and cluster back into full data
+dnb_values = join(dnb_values, na_dnb,by='location')
 
-
-# OLD KMEANS METHOD
-#dnb_num = data.frame(dnb=dnb_values$dnb)   # set up a dataframe to store row numbers so can be joined later
-#row.names(dnb_num)
-#kmn= kmeans(na.omit(dnb_num),3)
-#kmn = data.frame(row = names(kmn$cluster),kmn = kmn$cluster)
-#dnb_values$row = row.names(dnb_values)
-#dnb_values = join(dnb_values, kmn)
 
 
 # compare actual and resid plus constant for demeaned regression using kmean cluster for slope & intercept dummies
 
-mean_dnb = aggregate(dnb~location,data=dnb_values,function(x) mean(x,na.rm=T))
-names(mean_dnb)=c('location','mean_dnb')
-dnb_values = join(dnb_values, mean_dnb,by='location')
-dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mean_dnb
-
+dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 mean_lm = lm(demean_dnb~0+factor(kmn)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+zen*azt+
       ns(zen*phase,3)+ns(azt*phase,3)),data=dnb_values) # omit intercept
-
 mean_lm = lm(demean_dnb~0+factor(kmn)*(ns(zen*azt,2)+
       ns(zen*phase,2)+ns(azt*phase,2)),data=dnb_values) # omit intercept
-
-
 summary(mean_lm)
 
 
@@ -510,21 +498,21 @@ pred = join(pred,mean_dnb,by='location')
 pred$dnb = mean_lm$fitted.values+pred$mean_dnb   # add back the mean from demeaning process
 head(pred)
 
-resid3 = actual
-resid3$pred_actual = 'resid+const'
-resid3$count = 1:dim(resid3)[1]
-resid3 = join(resid3,mean_dnb,by='location')
-resid3$dnb = mean_lm$residuals  +resid3$mean_dnb
-head(resid3)
+resid = actual
+resid$pred_actual = 'resid+const'
+resid$count = 1:dim(resid)[1]
+resid = join(resid,mean_dnb,by='location')
+resid$dnb = mean_lm$residuals  +resid$mean_dnb
+head(resid)
 
-combined = rbind.fill(actual,pred, resid3)
+combined = rbind.fill(actual,pred, resid)
 
 
 # sample a portion for graphing
 
 library(sampling)
 set.seed(2)
-s=strata(combined,c("kmn"),size=c(5,5,5), method="srswor")
+s=strata(combined,c("kmn"),size=c(5,5,5,5,5), method="srswor")
 combined_sample = getdata(combined,s)  # only get one observation for each location 
 combined_sample = combined[combined$location %in% combined_sample$location,]   # limit to desired locations keeping all observations
 
@@ -668,4 +656,14 @@ endCluster()
 #
 #table(cut(mean_dnb$mean_dnb, breaks=c(0, 1e-9,,1e-8,1.5e-8,2e-8,10), include.lowest=TRUE))
 #quantile(mean_dnb$mean_dnb)
+
+
+# OLD KMEANS METHOD
+#dnb_num = data.frame(dnb=dnb_values$dnb)   # set up a dataframe to store row numbers so can be joined later
+#row.names(dnb_num)
+#kmn= kmeans(na.omit(dnb_num),3)
+#kmn = data.frame(row = names(kmn$cluster),kmn = kmn$cluster)
+#dnb_values$row = row.names(dnb_values)
+#dnb_values = join(dnb_values, kmn)
+
 
