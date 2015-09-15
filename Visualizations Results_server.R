@@ -453,23 +453,29 @@ dnb_values = join(dnb_values,azt_values)
 dnb_values = join(dnb_values, phase)
 
 
+# save output to load quickly
+
+#save(dnb_values,file='dnb_values_w_moon.RData')
+load('dnb_values_w_moon.RData')
+
 
 # find k-means = 3 groups based on dnb values (based on mean  of values)
-
+# NOT WORKING COMPARE WITH OLD KMEANS RESULTS.... 
 na_dnb = na.omit(dnb_values)
 # cluster based on mean and sd of data 
 sd_dnb = aggregate(dnb~location,data=na_dnb,function(x) sd(x,na.rm=T))
 mn_dnb = aggregate(dnb~location,data=na_dnb,function(x) mean(x,na.rm=T))
 names(sd_dnb)=c('location','sd_dnb')
 names(mn_dnb)=c('location','mn_dnb')
-na_dnb = join(mn_dnb, sd_dnb,by='location')  # store mean and sd of dnb values for each location
+na_dnb_mn_sd = join(mn_dnb, sd_dnb,by='location')  # store mean and sd of dnb values for each location
+na_dnb = join(na_dnb, na_dnb_mn_sd,by='location')  # store mean and sd of dnb values for each location
 # stratified sample to make sure we have adequate representation for each land use class
 na_dnb$quantile = cut(na_dnb$mn_dnb,quantile(na_dnb[,'mn_dnb']))
 set.seed(2)
 s=strata(na_dnb,'quantile',size=c(250,250,250,250,1), method="srswor") # create strata based on quantiles
 na_dnb_sample = getdata( na_dnb,s)
-cl1 = kcca(na_dnb_sample[,c('mn_dnb')], k=3, kccaFamily("kmeans"))
-na_dnb$kmn = predict(cl1, newdata=na_dnb[,c('mn_dnb'),drop=F])
+cl1 = kcca(na_dnb_sample[,c('dnb')], k=3, kccaFamily("kmeans"))   # THIS MIGHT BE LETTING INDV OBS HAVE DIFFERENT MEMBERSHIP WITHIN 1 LOCATION
+na_dnb$kmn = predict(cl1, newdata=na_dnb[,c('dnb'),drop=F])
 # add mean sd and cluster back into full data
 dnb_values = join(dnb_values, na_dnb,by='location')
 
@@ -478,8 +484,8 @@ dnb_values = join(dnb_values, na_dnb,by='location')
 # compare actual and resid plus constant for demeaned regression using kmean cluster for slope & intercept dummies
 
 dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
-mean_lm = lm(demean_dnb~0+factor(kmn)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+zen*azt+
-      ns(zen*phase,3)+ns(azt*phase,3)),data=dnb_values) # omit intercept
+#mean_lm = lm(demean_dnb~0+factor(kmn)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+zen*azt+
+#      ns(zen*phase,3)+ns(azt*phase,3)),data=dnb_values) # omit intercept
 mean_lm = lm(demean_dnb~0+factor(kmn)*(ns(zen*azt,2)+
       ns(zen*phase,2)+ns(azt*phase,2)),data=dnb_values) # omit intercept
 summary(mean_lm)
