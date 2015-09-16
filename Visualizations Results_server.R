@@ -17,7 +17,7 @@ library(rgeos)
 library(splines)
 library(flexclust)   # allow for multidimentional clustering with predict function
 library(sampling)
-
+library(plyr)
 
 # this scripts reads in raster files exported from grid_viirs_data (3).R
 
@@ -374,7 +374,7 @@ ggplot(combined[combined$pred_actual == 'resid+const',], aes(count, dnb,colour=p
 
 
 ############################################################################################
-
+############################################################################################
 
 
 
@@ -472,13 +472,25 @@ na_dnb = join(na_dnb, na_dnb_mn_sd,by='location')  # store mean and sd of dnb va
 # stratified sample to make sure we have adequate representation for each land use class
 na_dnb$quantile = cut(na_dnb$mn_dnb,quantile(na_dnb[,'mn_dnb']))
 set.seed(2)
-s=strata(na_dnb,'quantile',size=c(250,250,250,250,1), method="srswor") # create strata based on quantiles
-na_dnb_sample = getdata( na_dnb,s)
+#s=strata(na_dnb,'quantile',size=c(250,250,250,250,1), method="srswor") # create strata based on quantiles
+#na_dnb_sample = getdata( na_dnb,s)
+na_dnb_sample = na_dnb[sample(nrow(na_dnb),10000),]
 cl1 = kcca(na_dnb_sample[,c('dnb')], k=3, kccaFamily("kmeans"))   # THIS MIGHT BE LETTING INDV OBS HAVE DIFFERENT MEMBERSHIP WITHIN 1 LOCATION
+image(cl1)
 na_dnb$kmn = predict(cl1, newdata=na_dnb[,c('dnb'),drop=F])
 # add mean sd and cluster back into full data
-dnb_values = join(dnb_values, na_dnb,by='location')
+dnb_values = join(dnb_values, na_dnb, by=c('location','date.time'))
+table(na_dnb$kmn)
+table(dnb_values$kmn)
 
+# OLD KMEANS METHOD
+dnb_num = data.frame(dnb=dnb_values$dnb)   # set up a dataframe to store row numbers so can be joined later
+kmn2 = kmeans(na.omit(dnb_num),3)
+kmn2 = data.frame(row = names(kmn2$cluster),kmn2 = kmn2$cluster)
+dnb_values$row = row.names(dnb_values)
+dnb_values = join(dnb_values, kmn2,by='row')
+head(dnb_values)
+table(dnb_values$kmn2)
 
 
 # compare actual and resid plus constant for demeaned regression using kmean cluster for slope & intercept dummies
