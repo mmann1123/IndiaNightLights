@@ -416,12 +416,26 @@ set.seed(2)
 sampled = spsample(PolygonFromExtent(extent(72, 81.50, 15, 22.5),crs=CRS('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs ')),
      n=10000,type='random')
 
+
 # extract data (and surrounding area)
 dnb_values = extract(dnb_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
 zen_values = extract(zen_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)
 azt_values = extract(azt_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)
-
 time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
+
+
+# extract local testing data 
+# define locations of interest
+locations = read.csv('MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
+jumba.df = data.frame(STATE='MH', DISTRICT.CITY="NA", LOCATION='Jumda',LAT=20.010094,LON=77.044271, Ag.Rural=T)
+locations=rbind(locations,jumba.df)
+
+coordinates(locations)= ~LON+LAT
+proj4string(locations) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+dnb_values_loc = extract(dnb_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
+zen_values_loc = extract(zen_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
+azt_values_loc  = extract(azt_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
+time_stamp_extract_loc = gsub(x=colnames(dnb_values_loc),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
 
 
 
@@ -435,11 +449,22 @@ put_in_long2 <- function(wide_data,abreviation){
         head(wide_data)
         return(wide_data)
 }
+put_in_long_loc <- function(wide_data,abreviation){
+        names(wide_data) = time_stamp_extract_loc
+        wide_data$location = locations$LOCATION
+        wide_data = subset(wide_data,select=-c(ID)) # extra variable was added, remove
+        wide_data <- melt(wide_data )
+        names(wide_data)=c('location','date.time',paste(abreviation))
+        head(wide_data)
+        return(wide_data)
+}
 
 dnb_values=put_in_long2(dnb_values,'dnb')
 zen_values= put_in_long2(zen_values,'zen')
 azt_values=put_in_long2(azt_values,'azt')
-
+dnb_values_loc=put_in_long_loc(dnb_values_loc,'dnb')
+zen_values_loc= put_in_long_loc(zen_values_loc,'zen')
+azt_values_loc=put_in_long_loc(azt_values_loc,'azt')
 
 
 # add moon phase
@@ -448,65 +473,84 @@ azt_values=put_in_long2(azt_values,'azt')
 phase = read.csv('moon_info.csv')
 names(phase)=c('year','doy','time', 'illum', 'phase')
 phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
-library(plyr)
+
+
+# join in moon and dnb
 dnb_values = join(dnb_values,zen_values) # add moon characteristics to dnb values
 dnb_values = join(dnb_values,azt_values)
 dnb_values = join(dnb_values, phase)
 
+dnb_values_loc = join(dnb_values_loc,zen_values_loc) # add moon characteristics to dnb values
+dnb_values_loc = join(dnb_values_loc,azt_values_loc)
+dnb_values_loc = join(dnb_values_loc,phase)
+
+head(dnb_values)
+head(dnb_values_loc)
 
 # save output to load quickly
 
 #save(dnb_values,file='dnb_values_w_moon.RData')
+#save(dnb_values_loc,file='dnb_values_w_moon_loc.RData')
 load('dnb_values_w_moon.RData')
+load('dnb_values_w_moon_loc.RData')
 
 
-# find k-means = 3 groups based on dnb values (based on mean  of values)
-# NOT WORKING COMPARE WITH OLD KMEANS RESULTS.... 
-na_dnb = na.omit(dnb_values)
-# cluster based on mean and sd of data 
+# merge training and testing data
+dnb_values$type = 'training'
+dnb_values_loc$type = 'testing'
+dnb_values = rbind.fill(dnb_values,dnb_values_loc)
+
+
+# create descriptive statistics
 sd_dnb = aggregate(dnb~location,data=na_dnb,function(x) sd(x,na.rm=T))
 mn_dnb = aggregate(dnb~location,data=na_dnb,function(x) mean(x,na.rm=T))
 names(sd_dnb)=c('location','sd_dnb')
 names(mn_dnb)=c('location','mn_dnb')
-na_dnb_mn_sd = join(mn_dnb, sd_dnb,by='location')  # store mean and sd of dnb values for each location
-na_dnb = join(na_dnb, na_dnb_mn_sd,by='location')  # store mean and sd of dnb values for each location
-# stratified sample to make sure we have adequate representation for each land use class
-na_dnb$quantile = cut(na_dnb$mn_dnb,quantile(na_dnb[,'mn_dnb']))
-set.seed(2)
-#s=strata(na_dnb,'quantile',size=c(250,250,250,250,1), method="srswor") # create strata based on quantiles
-#na_dnb_sample = getdata( na_dnb,s)
-na_dnb_sample = na_dnb[sample(nrow(na_dnb),10000),]
-cl1 = kcca(na_dnb_sample[,c('dnb')], k=3, kccaFamily("kmeans"))   # THIS MIGHT BE LETTING INDV OBS HAVE DIFFERENT MEMBERSHIP WITHIN 1 LOCATION
-image(cl1)
-na_dnb$kmn = predict(cl1, newdata=na_dnb[,c('dnb'),drop=F])
-# add mean sd and cluster back into full data
-dnb_values = join(dnb_values, na_dnb, by=c('location','date.time'))
-table(na_dnb$kmn)
-table(dnb_values$kmn)
-
-# OLD KMEANS METHOD
-dnb_num = data.frame(dnb=dnb_values$dnb)   # set up a dataframe to store row numbers so can be joined later
-kmn2 = kmeans(na.omit(dnb_num),3)
-kmn2 = data.frame(row = names(kmn2$cluster),kmn2 = kmn2$cluster)
-dnb_values$row = row.names(dnb_values)
-dnb_values = join(dnb_values, kmn2,by='row')
-head(dnb_values)
-table(dnb_values$kmn2)
+dnb_values = join(dnb_values, mn_dnb)
+dnb_values = join(dnb_values, sd_dnb)
 
 
-# get summary of old kmeans breaks 
-tapply(dnb_values$dnb, dnb_values$kmn2, summary)
+## find k-means = 3 groups based on dnb values (based on mean  of values)
+## NOT WORKING COMPARE WITH OLD KMEANS RESULTS.... 
+#na_dnb = na.omit(dnb_values)
+## cluster based on mean and sd of data 
+#na_dnb_mn_sd = join(mn_dnb, sd_dnb,by='location')  # store mean and sd of dnb values for each location
+#na_dnb = join(na_dnb, na_dnb_mn_sd,by='location')  # store mean and sd of dnb values for each location
+## stratified sample to make sure we have adequate representation for each land use class
+#na_dnb$quantile = cut(na_dnb$mn_dnb,quantile(na_dnb[,'mn_dnb']))
+#set.seed(2)
+##s=strata(na_dnb,'quantile',size=c(250,250,250,250,1), method="srswor") # create strata based on quantiles
+##na_dnb_sample = getdata( na_dnb,s)
+#na_dnb_sample = na_dnb[sample(nrow(na_dnb),10000),]
+#cl1 = kcca(na_dnb_sample[,c('dnb')], k=3, kccaFamily("kmeans"))   # THIS MIGHT BE LETTING INDV OBS HAVE DIFFERENT MEMBERSHIP WITHIN 1 LOCATION
+#image(cl1)
+#na_dnb$kmn = predict(cl1, newdata=na_dnb[,c('dnb'),drop=F])
+## add mean sd and cluster back into full data
+#dnb_values = join(dnb_values, na_dnb, by=c('location','date.time'))
+#table(na_dnb$kmn)
+#table(dnb_values$kmn)
 
+## OLD KMEANS METHOD
+#dnb_num = data.frame(dnb=dnb_values$dnb)   # set up a dataframe to store row numbers so can be joined later
+#kmn2 = kmeans(na.omit(dnb_num),3)
+#kmn2 = data.frame(row = names(kmn2$cluster),kmn2 = kmn2$cluster)
+#dnb_values$row = row.names(dnb_values)
+#dnb_values = join(dnb_values, kmn2,by='row')
+#head(dnb_values)
+#table(dnb_values$kmn2)
+
+
+## get summary of old kmeans breaks 
+#tapply(dnb_values$dnb, dnb_values$kmn2, summary)
 
 
 # compare actual and resid plus constant for demeaned regression using kmean cluster for slope & intercept dummies
+# demean the y variable to simulate FE
 
 dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
+
 #mean_lm = lm(demean_dnb~0+factor(kmn)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+zen*azt+
 #      ns(zen*phase,3)+ns(azt*phase,3)),data=dnb_values) # omit intercept
-mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,2)+
-      ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
-
 #mean_lm = lm(demean_dnb~0+factor(kmn2)*(ns(zen*azt,2)+
 #      ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
 
@@ -514,6 +558,8 @@ mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,2)+
 #	+I(dnb<4e-6)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
 
 
+mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,2)+
+      ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
 
 summary(mean_lm)
 
@@ -543,7 +589,7 @@ combined = rbind.fill(actual,pred, resid)
 
 # sample a portion for graphing
 
-set.seed(3)  # 2 has declining values
+set.seed(4)  # 2 has declining values
 s=strata(combined,c("kmn"),size=c(5,5,5), method="srswor")
 combined_sample = getdata(combined,s)  # only get one observation for each location 
 combined_sample = combined[combined$location %in% combined_sample$location,]   # limit to desired locations keeping all observations
@@ -565,6 +611,53 @@ ggplot(combined_sample[combined_sample$pred_actual == 'resid+const',], aes(count
 
 
 
+
+
+
+# predict to testing locations
+dnb_values_loc = dnb_values[dnb_values$type=='testing',]
+mean_lm_loc = predict(mean_lm,dnb_values_loc)
+summary(mean_lm_loc)
+mean_lm_loc=data.frame(fitted.values=mean_lm_loc)
+mean_lm_loc$residuals = dnb_values_loc$dnb - mean_lm_loc$fitted.values
+
+# compare actual and predicted
+actual_loc = dnb_values_loc
+actual_loc$count = 1:dim(actual_loc)[1]
+actual_loc$pred_actual = 'actual'
+
+pred_loc = actual_loc
+pred_loc$pred_actual = 'predicted'
+pred_loc$count = 1:dim(pred_loc)[1]
+pred_loc = join(pred_loc,mn_dnb,by='location')
+pred_loc$dnb = mean_lm_loc$fitted.values+pred_loc$mn_dnb   # add back the mean from demeaning process
+head(pred_loc)
+
+resid_loc = actual_loc
+resid_loc$pred_actual = 'resid+const'
+resid_loc$count = 1:dim(resid_loc)[1]
+resid_loc = join(resid_loc,mn_dnb,by='location')
+resid_loc$dnb = mean_lm_loc$residuals  +resid_loc$mn_dnb
+head(resid_loc)
+
+combined_loc = rbind.fill(actual_loc,pred_loc, resid_loc)
+
+
+
+
+ggplot(combined_loc[combined_loc$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual,alpha=0.2))+geom_point()+
+  facet_wrap(~ location, scales="free_y")
+
+
+
+
+
+
+
+
+
+
+######################################
 # Extract data for sites of interest
 
 # define locations of interest
@@ -619,30 +712,31 @@ dnb_values_loc = join(dnb_values_loc, phase)
 head(dnb_values,20)
 
 # predict to new locations
-mean_lm_loc = predict(mean_lm,new_data=dnb_values_loc)
+dnb_values_loc2 = rbind.fill(dnb_values[1,],dnb_values_loc )
+mean_lm_loc = predict(mean_lm,dnb_values_loc2)
 
 
 # compare actual and predicted
-remove(actual, pred, resid)
-actual = na.omit(dnb_values)
-actual$count = 1:dim(actual)[1]
-actual$pred_actual = 'actual'
 
-pred = actual
-pred$pred_actual = 'predicted'
-pred$count = 1:dim(pred)[1]
-pred = join(pred,mn_dnb,by='location')
-pred$dnb = mean_lm$fitted.values+pred$mn_dnb   # add back the mean from demeaning process
-head(pred)
+actual_loc = na.omit(dnb_values_loc)
+actual_loc$count = 1:dim(actual_loc)[1]
+actual_loc$pred_actual = 'actual'
 
-resid = actual
-resid$pred_actual = 'resid+const'
-resid$count = 1:dim(resid)[1]
-resid = join(resid,mn_dnb,by='location')
-resid$dnb = mean_lm$residuals  +resid$mn_dnb
-head(resid)
+pred_loc = actual_loc
+pred_loc$pred_actual = 'predicted'
+pred_loc$count = 1:dim(pred_loc)[1]
+pred_loc = join(pred_loc,mn_dnb,by='location')
+pred_loc$dnb = mean_lm_loc+pred_loc$mn_dnb   # add back the mean from demeaning process
+head(pred_loc)
 
-combined = rbind.fill(actual,pred, resid)
+resid_loc = actual_loc
+resid_loc$pred_actual = 'resid+const'
+resid_loc$count = 1:dim(resid_loc)[1]
+resid_loc = join(resid_loc,mn_dnb,by='location')
+resid_loc$dnb = mean_lm_loc$residuals  +resid_loc$mn_dnb
+head(resid_loc)
+
+combined_loc = rbind.fill(actual_loc,pred_loc, resid_loc)
 
 
 
