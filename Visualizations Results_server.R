@@ -424,6 +424,7 @@ azt_values = extract(azt_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)
 time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
 
 
+
 # put into long form
 put_in_long2 <- function(wide_data,abreviation){
         names(wide_data) = time_stamp_extract
@@ -493,18 +494,32 @@ head(dnb_values)
 table(dnb_values$kmn2)
 
 
+# get summary of old kmeans breaks 
+tapply(dnb_values$dnb, dnb_values$kmn2, summary)
+
+
+
 # compare actual and resid plus constant for demeaned regression using kmean cluster for slope & intercept dummies
 
 dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 #mean_lm = lm(demean_dnb~0+factor(kmn)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+zen*azt+
 #      ns(zen*phase,3)+ns(azt*phase,3)),data=dnb_values) # omit intercept
-mean_lm = lm(demean_dnb~0+factor(kmn)*(ns(zen*azt,2)+
-      ns(zen*phase,2)+ns(azt*phase,2)),data=dnb_values) # omit intercept
+mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,2)+
+      ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
+
+#mean_lm = lm(demean_dnb~0+factor(kmn2)*(ns(zen*azt,2)+
+#      ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
+
+#mean_lm = lm(demean_dnb~0+I(dnb<1.099e-8)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)
+#	+I(dnb<4e-6)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
+
+
+
 summary(mean_lm)
 
 
 # compare actual and predicted
-
+remove(actual, pred, resid)
 actual = na.omit(dnb_values)
 actual$count = 1:dim(actual)[1]
 actual$pred_actual = 'actual'
@@ -512,15 +527,15 @@ actual$pred_actual = 'actual'
 pred = actual
 pred$pred_actual = 'predicted'
 pred$count = 1:dim(pred)[1]
-pred = join(pred,mean_dnb,by='location')
-pred$dnb = mean_lm$fitted.values+pred$mean_dnb   # add back the mean from demeaning process
+pred = join(pred,mn_dnb,by='location')
+pred$dnb = mean_lm$fitted.values+pred$mn_dnb   # add back the mean from demeaning process
 head(pred)
 
 resid = actual
 resid$pred_actual = 'resid+const'
 resid$count = 1:dim(resid)[1]
-resid = join(resid,mean_dnb,by='location')
-resid$dnb = mean_lm$residuals  +resid$mean_dnb
+resid = join(resid,mn_dnb,by='location')
+resid$dnb = mean_lm$residuals  +resid$mn_dnb
 head(resid)
 
 combined = rbind.fill(actual,pred, resid)
@@ -528,9 +543,8 @@ combined = rbind.fill(actual,pred, resid)
 
 # sample a portion for graphing
 
-library(sampling)
-set.seed(2)
-s=strata(combined,c("kmn"),size=c(5,5,5,5,5), method="srswor")
+set.seed(3)  # 2 has declining values
+s=strata(combined,c("kmn"),size=c(5,5,5), method="srswor")
 combined_sample = getdata(combined,s)  # only get one observation for each location 
 combined_sample = combined[combined$location %in% combined_sample$location,]   # limit to desired locations keeping all observations
 
@@ -548,6 +562,93 @@ ggplot(combined_sample[combined_sample$pred_actual != 'resid+const',], aes(count
 
 ggplot(combined_sample[combined_sample$pred_actual == 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
   facet_wrap(~ location, scales="free_y")
+
+
+
+# Extract data for sites of interest
+
+# define locations of interest
+locations = read.csv('MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
+jumba.df = data.frame(STATE='MH', DISTRICT.CITY="NA", LOCATION='Jumda',LAT=20.010094,LON=77.044271, Ag.Rural=T)
+locations=rbind(locations,jumba.df)
+
+coordinates(locations)= ~LON+LAT
+proj4string(locations) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+
+# extract data (and surrounding area)
+
+load('dnb_stack_wo_cld.RData')    # start here cloud free images stored here.
+load('zen_stack_wo_cld.RData')
+load('azt_stack_wo_cld.RData')
+
+dnb_values_loc = extract(dnb_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
+zen_values_loc = extract(zen_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
+azt_values_loc  = extract(azt_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
+
+time_stamp_extract = gsub(x=colnames(dnb_values_loc),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
+
+
+# put into long form
+put_in_long <- function(wide_data,abreviation){
+        names(wide_data) = time_stamp_extract
+        wide_data$location = locations$LOCATION
+        wide_data = subset(wide_data,select=-c(ID))
+        wide_data <- melt(wide_data )
+        names(wide_data)=c('location','date.time',paste(abreviation))
+        head(wide_data)
+        return(wide_data)
+}
+
+dnb_values_loc = put_in_long(dnb_values_loc,'dnb')
+zen_values_loc = put_in_long(zen_values_loc,'zen')
+azt_values_loc = put_in_long(azt_values_loc,'azt')
+
+
+
+# read in moon phase (year doy time moon_illum_frac moon_phase_angle)
+phase = read.csv('moon_info.csv')
+names(phase)=c('year','doy','time', 'illum', 'phase')
+phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
+
+
+# add moon phase
+library(plyr)
+dnb_values_loc = join(dnb_values_loc,zen_values_loc)
+dnb_values_loc = join(dnb_values_loc,azt_values_loc)
+dnb_values_loc = join(dnb_values_loc, phase)
+head(dnb_values,20)
+
+# predict to new locations
+mean_lm_loc = predict(mean_lm,new_data=dnb_values_loc)
+
+
+# compare actual and predicted
+remove(actual, pred, resid)
+actual = na.omit(dnb_values)
+actual$count = 1:dim(actual)[1]
+actual$pred_actual = 'actual'
+
+pred = actual
+pred$pred_actual = 'predicted'
+pred$count = 1:dim(pred)[1]
+pred = join(pred,mn_dnb,by='location')
+pred$dnb = mean_lm$fitted.values+pred$mn_dnb   # add back the mean from demeaning process
+head(pred)
+
+resid = actual
+resid$pred_actual = 'resid+const'
+resid$count = 1:dim(resid)[1]
+resid = join(resid,mn_dnb,by='location')
+resid$dnb = mean_lm$residuals  +resid$mn_dnb
+head(resid)
+
+combined = rbind.fill(actual,pred, resid)
+
+
+
+
+
+
 
 
 
@@ -684,4 +785,10 @@ endCluster()
 #dnb_values$row = row.names(dnb_values)
 #dnb_values = join(dnb_values, kmn)
 
+
+
+## create kmeans clusters on wide data
+#na_dnb_wide_sample = dnb_values[sample(nrow(dnb_values),5000),]
+#wide_kmn_class = kcca(na_dnb_wide_sample, k=3, kccaFamily("kmeans"))
+#na_dnb$kmn = predict(cl1, newdata=na_dnb[,c('dnb'),drop=F])
 
