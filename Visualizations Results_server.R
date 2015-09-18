@@ -391,25 +391,8 @@ load('azt_stack_wo_cld.RData')
 
 
 # create a plygon to create samples within
-PolygonFromExtent <- function(ext, asSpatial=T, crs=CRS(NA), id=1)
-{
-  if(class(ext)== "rasterLayer")
-  {# if raster supplied determine extent and crs then proceed
-    crs <- ext@crs
-    ext <- extent(ext)
-  }
-  if(class(ext)== "Extent")
-	x1 <- ext@xmin
-	x2 <- ext@xmax
-	y1 <- ext@ymin
-	y2<-ext@ymax
-	coords <- matrix(c(x1, y1,  x1, y2,  x2, y2, x2, y1, x1, y1), ncol=2, byrow=T)
-	poly <- Polygon(coords)
-	if(asSpatial)
-	{ spPoly <- SpatialPolygons(list(Polygons(list(poly), ID=id)), proj4string=crs)
-	  return(spPoly)}
-	return(poly)
-}
+source('/groups/manngroup/India VIIRS/IndiaNightLights/PolygonFromExtent.R')
+
 
 # create sample of 10000 set seed for reproducibility
 set.seed(2)
@@ -487,6 +470,7 @@ dnb_values_loc = join(dnb_values_loc,phase)
 head(dnb_values)
 head(dnb_values_loc)
 
+
 # save output to load quickly
 
 #save(dnb_values,file='dnb_values_w_moon.RData')
@@ -502,14 +486,15 @@ dnb_values = rbind.fill(dnb_values,dnb_values_loc)
 
 
 # create descriptive statistics
-sd_dnb = aggregate(dnb~location,data=na_dnb,function(x) sd(x,na.rm=T))
-mn_dnb = aggregate(dnb~location,data=na_dnb,function(x) mean(x,na.rm=T))
+sd_dnb = aggregate(dnb~location,data=dnb_values,function(x) sd(x,na.rm=T))
+mn_dnb = aggregate(dnb~location,data=dnb_values,function(x) mean(x,na.rm=T))
 names(sd_dnb)=c('location','sd_dnb')
 names(mn_dnb)=c('location','mn_dnb')
 dnb_values = join(dnb_values, mn_dnb)
 dnb_values = join(dnb_values, sd_dnb)
 
 
+##########
 ## find k-means = 3 groups based on dnb values (based on mean  of values)
 ## NOT WORKING COMPARE WITH OLD KMEANS RESULTS.... 
 #na_dnb = na.omit(dnb_values)
@@ -544,9 +529,10 @@ dnb_values = join(dnb_values, sd_dnb)
 #tapply(dnb_values$dnb, dnb_values$kmn2, summary)
 
 
+#########
 # compare actual and resid plus constant for demeaned regression using kmean cluster for slope & intercept dummies
-# demean the y variable to simulate FE
 
+# demean the y variable to simulate FE
 dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 
 #mean_lm = lm(demean_dnb~0+factor(kmn)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+zen*azt+
@@ -558,8 +544,8 @@ dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 #	+I(dnb<4e-6)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
 
 
-mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,2)+
-      ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
+mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
+      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
 
 summary(mean_lm)
 
@@ -589,8 +575,9 @@ combined = rbind.fill(actual,pred, resid)
 
 # sample a portion for graphing
 
-set.seed(4)  # 2 has declining values
-s=strata(combined,c("kmn"),size=c(5,5,5), method="srswor")
+set.seed(11)  # 2 has declining values
+actual$quantile = cut(actual$mn_dnb,quantile(actual[,'mn_dnb']))
+s=strata(actual,'quantile',size=c(3,3,3,3,1), method="srswor") # create strata based on quantiles
 combined_sample = getdata(combined,s)  # only get one observation for each location 
 combined_sample = combined[combined$location %in% combined_sample$location,]   # limit to desired locations keeping all observations
 
@@ -603,14 +590,11 @@ ggplot(combined_sample, aes(count, dnb,colour=pred_actual))+geom_point()+
 ggplot(combined_sample[combined_sample$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual,alpha=0.2))+geom_point()+
   facet_wrap(~ location, scales="free_y")
 
-ggplot(combined_sample[combined_sample$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
-  facet_wrap(~ location)
+ggplot(combined_sample[combined_sample$pred_actual != 'predicted',], aes(count, dnb,colour=pred_actual))+geom_point()+
+  facet_wrap(~ location, scales='free_y')
 
 ggplot(combined_sample[combined_sample$pred_actual == 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
   facet_wrap(~ location, scales="free_y")
-
-
-
 
 
 
@@ -637,56 +621,69 @@ resid_loc = actual_loc
 resid_loc$pred_actual = 'resid+const'
 resid_loc$count = 1:dim(resid_loc)[1]
 resid_loc = join(resid_loc,mn_dnb,by='location')
-resid_loc$dnb = mean_lm_loc$residuals  +resid_loc$mn_dnb
+resid_loc$dnb = mean_lm_loc$residuals # +resid_loc$mn_dnb
 head(resid_loc)
 
 combined_loc = rbind.fill(actual_loc,pred_loc, resid_loc)
 
 
 
-
 ggplot(combined_loc[combined_loc$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual,alpha=0.2))+geom_point()+
+  facet_wrap(~ location, scales="free_y")
+
+ggplot(combined_loc[combined_loc$pred_actual == 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
+  facet_wrap(~ location, scales="free_y")
+
+
+ggplot(combined_loc[combined_loc$pred_actual != 'predicted',], aes(count, dnb,colour=pred_actual))+geom_point()+
   facet_wrap(~ location, scales="free_y")
 
 
 
 
 
+# Compare to actual outage data  ----------------------------------------------------------
+
+# read in each xls file and convert to long format and write to csv
+# install.packages('readxl')
+library(readxl)
+file_list = list.files('..//TestingData//',pattern='.xlsx')
+for(i in 1:length(file_list)){
+	a_location = read_excel(paste("..//TestingData//",file_list[i],sep=''), na = "99")
+	names(a_location) = c('location','date','hour',paste(1:60))	
+
+	# put data into long form and sort 
+	longs =  melt(a_location,id=c('location','date','hour') )
+	names(longs) = c('location','date','hour','minute','voltage')
+	longs = longs[with(longs,order(location,date,hour)),]
+	#http://www.regexr.com/
+	write.csv(longs,paste('..//TestingData//',gsub('(.[a-z]+$)','\\2',file_list[i]),'.csv',sep=''))
+}
+
+# stack all files together
+file_list = list.files('..//TestingData//',pattern='.csv')
+voltage = read.csv(paste('..//TestingData//',file_list[1],sep=''))
+for(i in 2:length(file_list)){
+	inner =  read.csv(paste('..//TestingData//',file_list[i],sep=''))
+	voltage = rbind.fill(voltage,inner)
+}
+
+#save the output
+#save(voltage,file='..//TestingData//Voltage.RData')
+load('..//TestingData//Voltage.RData')
+
+# deal with date time
+voltage$date.hour.minute = paste(voltage$date,sprintf('%02d',voltage$hour), sprintf('%02d',voltage$minute),sep='.')
+voltage$date.hour.minute =  as.character(strptime(voltage$date.hour.minute, '%Y-%m-%d.%H.%M'))
+voltage$date.hour.minute <- as.POSIXct(voltage$date.hour.minute, tz="Asia/Calcutta")
+
+# convert to UTC time
+voltage$date.time = format(voltage$date.hour.minute,tz='UTC',usetz=T,format='%Y%j.%H%M')
+data.frame(head(voltage$date.hour.minute),head(voltage$date.time))
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Remove Lunar Cycle for raster stacks ------------------------------------------------
-
-
-
-# plot urban
-plot(1:length(data_urban$dnb),data_urban$dnb)
-lm_u = lm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=(data_urban))
-resid_u = lm_u$fitted.values #residuals  #fitted.values
-summary(lm_u)
-lunar = predict(lm1,data_urban)
-#points( 1:length(resid_u),resid_u, col='red')
-points(1:length(resid_u),lunar,col='green')  # predictions based on rural
-#points(1:length(resid_u),(lm_u$residuals+lm_u$coefficients),col='orange')
-points(1:length(resid_u),data_urban$dnb-lunar,col='blue')  # predictions based on rural
-
-# maybe create panel dataset of uninhabited areas? subtract prediction from that
 
 
 
