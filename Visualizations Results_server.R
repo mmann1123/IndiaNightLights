@@ -678,6 +678,7 @@ voltage$date.hour.minute =  as.character(strptime(voltage$date.hour.minute, '%Y-
 voltage$date.hour.minute <- as.POSIXct(voltage$date.hour.minute, tz="Asia/Calcutta")
 
 # convert to UTC time
+OlsonNames() # full list of time zones (only works on unix?)
 voltage$date.time = format(voltage$date.hour.minute,tz='UTC',usetz=T,format='%Y%j.%H%M')
 data.frame(head(voltage$date.hour.minute),head(voltage$date.time))
 
