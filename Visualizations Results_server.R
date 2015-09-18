@@ -472,6 +472,7 @@ head(dnb_values_loc)
 
 
 # save output to load quickly
+setwd('/groups/manngroup/India\ VIIRS/2015')
 
 #save(dnb_values,file='dnb_values_w_moon.RData')
 #save(dnb_values_loc,file='dnb_values_w_moon_loc.RData')
@@ -683,7 +684,19 @@ voltage$date.time = format(voltage$date.hour.minute,tz='UTC',usetz=T,format='%Y%
 data.frame(head(voltage$date.hour.minute),head(voltage$date.time))
 
 
+# match to closest time in local data 
 
+test_site = actual_loc[actual_loc$location=='Chandikapur',]
+test_voltage = voltage[voltage$location=='Chandikapur',]
+test_site$date.time2 = strptime(test_site$date.time,'%Y%j.%H%M')
+test_site$date.time2 <- as.POSIXct(test_site$date.time2, tz="UTC")
+test_voltage$date.time2 = strptime(test_voltage$date.time,'%Y%j.%H%M')
+test_voltage$date.time2 <- as.POSIXct(test_voltage$date.time2, tz="Asia/Calcutta")
+
+test_join = cbind(test_site, test_voltage[ sapply(test_site$date.time2, 
+                      function(x) which.min(abs(difftime(x, test_voltage$date.time2)))), ])
+
+head(test_join,15)
 
 
 
