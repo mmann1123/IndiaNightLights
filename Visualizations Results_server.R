@@ -628,7 +628,6 @@ head(resid_loc)
 combined_loc = rbind.fill(actual_loc,pred_loc, resid_loc)
 
 
-
 ggplot(combined_loc[combined_loc$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual,alpha=0.2))+geom_point()+
   facet_wrap(~ location, scales="free_y")
 
@@ -638,6 +637,7 @@ ggplot(combined_loc[combined_loc$pred_actual == 'resid+const',], aes(count, dnb,
 
 ggplot(combined_loc[combined_loc$pred_actual != 'predicted',], aes(count, dnb,colour=pred_actual))+geom_point()+
   facet_wrap(~ location, scales="free_y")
+
 
 
 
@@ -673,30 +673,39 @@ for(i in 2:length(file_list)){
 #save(voltage,file='..//TestingData//Voltage.RData')
 load('..//TestingData//Voltage.RData')
 
+
 # deal with date time
+OlsonNames() # full list of time zones (only works on unix?)
 voltage$date.hour.minute = paste(voltage$date,sprintf('%02d',voltage$hour), sprintf('%02d',voltage$minute),sep='.')
 voltage$date.hour.minute =  as.character(strptime(voltage$date.hour.minute, '%Y-%m-%d.%H.%M'))
 voltage$date.hour.minute <- as.POSIXct(voltage$date.hour.minute, tz="Asia/Calcutta")
+head(voltage$date.hour.minute)
+attributes(voltage$date.hour.minute)$tzone = 'UTC'  # convert Calcutta time to UTC
+voltage$date.time2 = voltage$date.hour.minute
+head(voltage$date.hour.minute)
 
-# convert to UTC time
-OlsonNames() # full list of time zones (only works on unix?)
-voltage$date.time = format(voltage$date.hour.minute,tz='UTC',usetz=T,format='%Y%j.%H%M')
-data.frame(head(voltage$date.hour.minute),head(voltage$date.time))
+#same for all locations 
+actual_loc$date.time2 = strptime(actual_loc$date.time,'%Y%j.%H%M')
+actual_loc$date.time2 <- as.POSIXct(actual_loc$date.time2, tz="UTC")
 
 
 # match to closest time in local data 
-
-test_site = actual_loc[actual_loc$location=='Chandikapur',]
-test_voltage = voltage[voltage$location=='Chandikapur',]
-test_site$date.time2 = strptime(test_site$date.time,'%Y%j.%H%M')
-test_site$date.time2 <- as.POSIXct(test_site$date.time2, tz="UTC")
-test_voltage$date.time2 = strptime(test_voltage$date.time,'%Y%j.%H%M')
-test_voltage$date.time2 <- as.POSIXct(test_voltage$date.time2, tz="Asia/Calcutta")
-
+locales = unique(actual_loc$location)
+locale = locales[11]
+test_site = actual_loc[actual_loc$location==locale,]
+test_voltage = voltage[voltage$location ==locale,]
 test_join = cbind(test_site, test_voltage[ sapply(test_site$date.time2, 
                       function(x) which.min(abs(difftime(x, test_voltage$date.time2)))), ])
-
 head(test_join,15)
+
+test_join$count = 1:dim(test_join)[1]
+test_join$lights_out = 'on'
+test_join$lights_out[test_join$voltage==0]='off'
+ggplot(test_join, aes(count, dnb,colour=lights_out))+geom_point() + 
+     geom_vline(xintercept = test_join$count[test_join$voltage==0],colour='red',alpha=0.25)+
+     geom_vline(xintercept = test_join$count[is.na(test_join$voltage)],colour='blue',alpha=0.25)
+
+
 
 
 
