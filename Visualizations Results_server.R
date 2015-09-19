@@ -548,6 +548,11 @@ dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
       ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
 
+mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
+      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4))+I(mn_dnb<1e-7)*(ns(zen*azt,3)+
+      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
+
+
 summary(mean_lm)
 
 
@@ -684,15 +689,16 @@ attributes(voltage$date.hour.minute)$tzone = 'UTC'  # convert Calcutta time to U
 voltage$date.time2 = voltage$date.hour.minute
 head(voltage$date.hour.minute)
 
+
 #same for all locations 
-actual_loc$date.time2 = strptime(actual_loc$date.time,'%Y%j.%H%M')
-actual_loc$date.time2 <- as.POSIXct(actual_loc$date.time2, tz="UTC")
+resid_loc$date.time2 = strptime(resid_loc$date.time,'%Y%j.%H%M')
+resid_loc$date.time2 <- as.POSIXct(resid_loc$date.time2, tz="UTC")
 
 
 # match to closest time in local data 
-locales = unique(actual_loc$location)
-locale = locales[11]
-test_site = actual_loc[actual_loc$location==locale,]
+locales = unique(resid_loc$location)
+locale = locales[6]
+test_site = resid_loc[resid_loc$location==locale,]
 test_voltage = voltage[voltage$location ==locale,]
 test_join = cbind(test_site, test_voltage[ sapply(test_site$date.time2, 
                       function(x) which.min(abs(difftime(x, test_voltage$date.time2)))), ])
