@@ -172,12 +172,12 @@ registerDoParallel(32)
 
 
 # remove cloud cells multicore  returns NA but runs fast!
-#foreach(i=1:dim(dnb_stack)[3]) %do% { dnb_stack[[i]][cld_stack[[i]]>1]=NA}
-#save(dnb_stack,file = 'dnb_stack_wo_cld.RData')
-#foreach(i=1:dim(zen_stack)[3]) %do% { zen_stack[[i]][cld_stack[[i]]>1]=NA}
-#save(zen_stack,file = 'zen_stack_wo_cld.RData')
-#foreach(i=1:dim(azt_stack)[3]) %do% { azt_stack[[i]][cld_stack[[i]]>1]=NA}
-#save(azt_stack,file = 'azt_stack_wo_cld.RData')
+foreach(i=1:dim(dnb_stack)[3]) %do% { dnb_stack[[i]][cld_stack[[i]]>0]=NA}
+save(dnb_stack,file = 'dnb_stack_wo_cld.RData')
+foreach(i=1:dim(zen_stack)[3]) %do% { zen_stack[[i]][cld_stack[[i]]>0]=NA}
+save(zen_stack,file = 'zen_stack_wo_cld.RData')
+foreach(i=1:dim(azt_stack)[3]) %do% { azt_stack[[i]][cld_stack[[i]]>0]=NA}
+save(azt_stack,file = 'azt_stack_wo_cld.RData')
 
 
 setwd('/groups/manngroup/India\ VIIRS/2015')
@@ -188,84 +188,84 @@ load('azt_stack_wo_cld.RData')
 
 
 
-# Extract data for sites of interest --------------------------------------
-
-# define locations of interest
-locations = read.csv('MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
-jumba.df = data.frame(STATE='MH', DISTRICT.CITY="NA", LOCATION='Jumda',LAT=20.010094,LON=77.044271, Ag.Rural=T)
-locations=rbind(locations,jumba.df)
-
-coordinates(locations)= ~LON+LAT
-proj4string(locations) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
-
-# extract data (and surrounding area)
-dnb_values = extract(dnb_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
-zen_values = extract(zen_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
-azt_values = extract(azt_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
-
-time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
-
-
-# put into long form
-put_in_long <- function(wide_data,abreviation){
-	names(wide_data) = time_stamp_extract
-	wide_data$location = locations$LOCATION
-	wide_data = subset(wide_data,select=-c(ID))
-	wide_data <- melt(wide_data )
-	names(wide_data)=c('location','date.time',paste(abreviation))
-	head(wide_data)
-	return(wide_data)
-}
-
-dnb_values=put_in_long(dnb_values,'dnb')
-zen_values= put_in_long(zen_values,'zen')
-azt_values=put_in_long(azt_values,'azt')
-
-
-
-# read in moon phase (year doy time moon_illum_frac moon_phase_angle)
-phase = read.csv('moon_info.csv')
-names(phase)=c('year','doy','time', 'illum', 'phase')
-phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
-
-
-# add moon phase
-library(plyr)
-dnb_values = join(dnb_values,zen_values)
-dnb_values = join(dnb_values,azt_values)
-dnb_values = join(dnb_values, phase)
-head(dnb_values,20)
-
-
-# run regressions 
-library(splines)
-
-fixed = lm(dnb~factor(location)+ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+
-    zen:phase+azt:phase,data=dnb_values)
-
-fixed = lm(dnb~factor(location)+zen+azt+phase+zen:azt+
-   zen:phase^2+azt:phase^2,data=dnb_values)
-
-summary(fixed)
-
-
-# compare actual and predicted
-
-actual = na.omit(dnb_values)
-actual$count = 1:dim(actual)[1]
-actual$pred_actual = 'actual'
-pred = na.omit(dnb_values)
-pred$count = 1:dim(pred)[1]
-pred$dnb = fixed$fitted.values
-pred$pred_actual = 'predicted'
-
-combined = rbind(actual,pred)
-
-# plot actual vs predicted
-ggplot(combined, aes(count, dnb,colour=pred_actual))+geom_point()+ 
-  facet_wrap(~ location, scales="free_y")
-
-
+## Extract data for sites of interest --------------------------------------
+#
+## define locations of interest
+#locations = read.csv('MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
+#jumba.df = data.frame(STATE='MH', DISTRICT.CITY="NA", LOCATION='Jumda',LAT=20.010094,LON=77.044271, Ag.Rural=T)
+#locations=rbind(locations,jumba.df)
+#
+#coordinates(locations)= ~LON+LAT
+#proj4string(locations) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+#
+## extract data (and surrounding area)
+#dnb_values = extract(dnb_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
+#zen_values = extract(zen_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
+#azt_values = extract(azt_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
+#
+#time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
+#
+#
+## put into long form
+#put_in_long <- function(wide_data,abreviation){
+#	names(wide_data) = time_stamp_extract
+#	wide_data$location = locations$LOCATION
+#	wide_data = subset(wide_data,select=-c(ID))
+#	wide_data <- melt(wide_data )
+#	names(wide_data)=c('location','date.time',paste(abreviation))
+#	head(wide_data)
+#	return(wide_data)
+#}
+#
+#dnb_values=put_in_long(dnb_values,'dnb')
+#zen_values= put_in_long(zen_values,'zen')
+#azt_values=put_in_long(azt_values,'azt')
+#
+#
+#
+## read in moon phase (year doy time moon_illum_frac moon_phase_angle)
+#phase = read.csv('moon_info.csv')
+#names(phase)=c('year','doy','time', 'illum', 'phase')
+#phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
+#
+#
+## add moon phase
+#library(plyr)
+#dnb_values = join(dnb_values,zen_values)
+#dnb_values = join(dnb_values,azt_values)
+#dnb_values = join(dnb_values, phase)
+#head(dnb_values,20)
+#
+#
+## run regressions 
+#library(splines)
+#
+#fixed = lm(dnb~factor(location)+ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+
+#    zen:phase+azt:phase,data=dnb_values)
+#
+#fixed = lm(dnb~factor(location)+zen+azt+phase+zen:azt+
+#   zen:phase^2+azt:phase^2,data=dnb_values)
+#
+#summary(fixed)
+#
+#
+## compare actual and predicted
+#
+#actual = na.omit(dnb_values)
+#actual$count = 1:dim(actual)[1]
+#actual$pred_actual = 'actual'
+#pred = na.omit(dnb_values)
+#pred$count = 1:dim(pred)[1]
+#pred$dnb = fixed$fitted.values
+#pred$pred_actual = 'predicted'
+#
+#combined = rbind(actual,pred)
+#
+## plot actual vs predicted
+#ggplot(combined, aes(count, dnb,colour=pred_actual))+geom_point()+ 
+#  facet_wrap(~ location, scales="free_y")
+#
+#
 ## compare actual and resid plus constant for FE regression  # DON'T USE FE
 #resid = na.omit(dnb_values)
 #resid$count = 1:dim(resid)[1]
@@ -282,59 +282,57 @@ ggplot(combined, aes(count, dnb,colour=pred_actual))+geom_point()+
 #
 #ggplot(combined2, aes(count, dnb,colour=pred_actual))+geom_point()+
 #  facet_wrap(~ location, scales="free_y")
-
-
-
-
-
-# compare actual and resid plus constant for demeaned regression  
-
-mean_dnb = aggregate(dnb~location,data=dnb_values,function(x) mean(x,na.rm=T))
-names(mean_dnb)=c('location','mean_dnb')
-dnb_values = join(dnb_values, mean_dnb,by='location')
-dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mean_dnb
-
-mean_lm = lm(demean_dnb~0+I(mean_dnb>1.5e-8)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+
-      zen:azt+poly(zen:phase,2)+azt:phase),data=dnb_values) # omit intercept
-
-mean_lm = lm(demean_dnb~0+I(mean_dnb>1.5e-8)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+
-      zen*azt+ns(zen*phase,3)+ns(azt*phase,3)),data=dnb_values) # omit intercept
-
-summary(mean_lm)
-#I(mean_dnb>1e-8)
-
-
-resid3 = actual
-resid3$pred_actual = 'resid+const'
-resid3$count = 1:dim(resid3)[1]
-resid3 = join(resid3,mean_dnb,by='location')
-resid3$dnb = mean_lm$residuals  +resid3$mean_dnb  
-head(resid3)
-
-pred3 = actual
-pred3$pred_actual = 'predicted'
-pred3$count = 1:dim(pred3)[1]
-pred3 = join(pred3,mean_dnb,by='location')
-pred3$dnb = mean_lm$fitted.values+pred3$mean_dnb
-head(pred3)
-
-
-combined = rbind.fill(actual,resid3,pred3)
-
-# plot actual vs predicted
-ggplot(combined, aes(count, dnb,colour=pred_actual))+geom_point()+
-  facet_wrap(~ location, scales="free_y")
-
-ggplot(combined[combined$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
-  facet_wrap(~ location, scales="free_y")
-
-ggplot(combined[combined$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
-  facet_wrap(~ location)
-
-ggplot(combined[combined$pred_actual == 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
-  facet_wrap(~ location, scales="free_y")
-
-
+#
+#
+#
+## compare actual and resid plus constant for demeaned regression  
+#
+#mean_dnb = aggregate(dnb~location,data=dnb_values,function(x) mean(x,na.rm=T))
+#names(mean_dnb)=c('location','mean_dnb')
+#dnb_values = join(dnb_values, mean_dnb,by='location')
+#dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mean_dnb
+#
+#mean_lm = lm(demean_dnb~0+I(mean_dnb>1.5e-8)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+
+#      zen:azt+poly(zen:phase,2)+azt:phase),data=dnb_values) # omit intercept
+#
+#mean_lm = lm(demean_dnb~0+I(mean_dnb>1.5e-8)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+
+#      zen*azt+ns(zen*phase,3)+ns(azt*phase,3)),data=dnb_values) # omit intercept
+#
+#summary(mean_lm)
+##I(mean_dnb>1e-8)
+#
+#
+#resid3 = actual
+#resid3$pred_actual = 'resid+const'
+#resid3$count = 1:dim(resid3)[1]
+#resid3 = join(resid3,mean_dnb,by='location')
+#resid3$dnb = mean_lm$residuals  +resid3$mean_dnb  
+#head(resid3)
+#
+#pred3 = actual
+#pred3$pred_actual = 'predicted'
+#pred3$count = 1:dim(pred3)[1]
+#pred3 = join(pred3,mean_dnb,by='location')
+#pred3$dnb = mean_lm$fitted.values+pred3$mean_dnb
+#head(pred3)
+#
+#
+#combined = rbind.fill(actual,resid3,pred3)
+#
+## plot actual vs predicted
+#ggplot(combined, aes(count, dnb,colour=pred_actual))+geom_point()+
+#  facet_wrap(~ location, scales="free_y")
+#
+#ggplot(combined[combined$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
+#  facet_wrap(~ location, scales="free_y")
+#
+#ggplot(combined[combined$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
+#  facet_wrap(~ location)
+#
+#ggplot(combined[combined$pred_actual == 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
+#  facet_wrap(~ location, scales="free_y")
+#
+#
 # test if residual is white noise  NOT NEEDED TOO STRICT
 #H0: The data are independently distributed (i.e. the correlations in the population from which the sample is taken are 0, so that any observed correl$
 #Ha: The data are not independently distributed; they exhibit serial correlation.
@@ -346,9 +344,9 @@ ggplot(combined[combined$pred_actual == 'resid+const',], aes(count, dnb,colour=p
 #   test_data_ts = zoo(test_data_ag$dnb,test_data_ag$date.time)
 #   print( Box.test(test_data_ts, lag = 1, type = c("Ljung-Box"), fitdf = 0))
 #  }
-
-
-
+#
+#
+#
 ## comare acutal and resid plus constant  pooled  # DONT USE POOLED
 #pool = lm(dnb~ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=2)+zen:azt+zen:phase+azt:phase,data=dnb_values)
 #summary(pool)
@@ -410,9 +408,14 @@ time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v3)
 # extract local testing data 
 # define locations of interest
 locations = read.csv('MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
+locations2 = read.csv('/groups/manngroup/India VIIRS/TestingData/Other 28 ESMI MH Locations Coordinates.csv')
+names(locations2) = c('STATE','DISTRICT.CITY','LOCATION','TYPE','LAT','LON','Ag.Rural')
+locations2 = locations2[,!names(locations2) %in% 'TYPE']
 jumba.df = data.frame(STATE='MH', DISTRICT.CITY="NA", LOCATION='Jumda',LAT=20.010094,LON=77.044271, Ag.Rural=T)
-locations=rbind(locations,jumba.df)
-
+locations=rbind.fill(locations,jumba.df)
+locations=rbind.fill(locations,locations2)
+head(locations)
+# convert to spatial objects and extract values
 coordinates(locations)= ~LON+LAT
 proj4string(locations) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
 dnb_values_loc = extract(dnb_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
@@ -442,6 +445,7 @@ put_in_long_loc <- function(wide_data,abreviation){
         return(wide_data)
 }
 
+
 dnb_values=put_in_long2(dnb_values,'dnb')
 zen_values= put_in_long2(zen_values,'zen')
 azt_values=put_in_long2(azt_values,'azt')
@@ -462,11 +466,9 @@ phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,se
 dnb_values = join(dnb_values,zen_values) # add moon characteristics to dnb values
 dnb_values = join(dnb_values,azt_values)
 dnb_values = join(dnb_values, phase)
-
 dnb_values_loc = join(dnb_values_loc,zen_values_loc) # add moon characteristics to dnb values
 dnb_values_loc = join(dnb_values_loc,azt_values_loc)
 dnb_values_loc = join(dnb_values_loc,phase)
-
 head(dnb_values)
 head(dnb_values_loc)
 
@@ -484,6 +486,7 @@ load('dnb_values_w_moon_loc.RData')
 dnb_values$type = 'training'
 dnb_values_loc$type = 'testing'
 dnb_values = rbind.fill(dnb_values,dnb_values_loc)
+head(dnb_values)
 
 
 # create descriptive statistics
@@ -544,14 +547,12 @@ dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 #mean_lm = lm(demean_dnb~0+I(dnb<1.099e-8)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)
 #	+I(dnb<4e-6)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
 
-
 mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
       ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
 
 mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
       ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4))+I(mn_dnb<1e-7)*(ns(zen*azt,3)+
       ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
-
 
 summary(mean_lm)
 
@@ -639,7 +640,6 @@ ggplot(combined_loc[combined_loc$pred_actual != 'resid+const',], aes(count, dnb,
 ggplot(combined_loc[combined_loc$pred_actual == 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
   facet_wrap(~ location, scales="free_y")
 
-
 ggplot(combined_loc[combined_loc$pred_actual != 'predicted',], aes(count, dnb,colour=pred_actual))+geom_point()+
   facet_wrap(~ location, scales="free_y")
 
@@ -697,12 +697,14 @@ resid_loc$date.time2 <- as.POSIXct(resid_loc$date.time2, tz="UTC")
 
 # match to closest time in local data 
 locales = unique(resid_loc$location)
-locale = locales[6]
+locale = locales[8]
 test_site = resid_loc[resid_loc$location==locale,]
 test_voltage = voltage[voltage$location ==locale,]
 test_join = cbind(test_site, test_voltage[ sapply(test_site$date.time2, 
                       function(x) which.min(abs(difftime(x, test_voltage$date.time2)))), ])
 head(test_join,15)
+if(dim(test_voltage)[1]==0){stop()}
+
 
 test_join$count = 1:dim(test_join)[1]
 test_join$lights_out = 'on'
@@ -710,7 +712,7 @@ test_join$lights_out[test_join$voltage==0]='off'
 ggplot(test_join, aes(count, dnb,colour=lights_out))+geom_point() + 
      geom_vline(xintercept = test_join$count[test_join$voltage==0],colour='red',alpha=0.25)+
      geom_vline(xintercept = test_join$count[is.na(test_join$voltage)],colour='blue',alpha=0.25)
-
+remove(test_join) # USE: to avoid mismatch between locations
 
 
 
