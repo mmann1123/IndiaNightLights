@@ -23,11 +23,17 @@ library('doParallel')
 
 registerDoParallel(32)
 
-setwd("/groups/manngroup/India VIIRS/May2015")
+setwd("/groups/manngroup/India VIIRS/2015")   # all May2015 .h5 files moved to /2015/
  
 # read in list of files and set up iteration groups
 d = list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
-iterator = split(1:length(d), cut(1:length(d),3))   #11
+iterator = split(1:length(d), cut(1:length(d),13))   #11
+
+#check output names
+start_c = 36
+end_c = 47
+substr(d[1],start_c,end_c)
+
 
 #iterate through smaller groups
 for(j in 1:length(iterator)){
@@ -47,16 +53,20 @@ for(j in 1:length(iterator)){
         fname = d[i]
 
         # store names for later
-        name_date_time = substr(d[i],39,50)
+        name_date_time = substr(d[i],start_c,end_c)
            
         ### Grid DNB Radiance ###
         #http://neondataskills.org/HDF5/Create-Raster-Stack-Spectroscopy-HDF5-In-R/
             
         #Read in HDF5 files
         dnb <- h5read(fname,'/Radiance')
-        lon_dnb <- h5read(fname,'/Longitude')
+        dnb[,1:224] = NA  # remove high noise cells file:///C:/Users/mmann/Downloads/8-133-1-PB%20(4).pdf
+	columns = dim(dnb)[2]
+	dnb[,(columns-224):columns] = NA
+        dnb[dnb==-1.5e-09]=NA  # remove missing data verified with eli
+
+	lon_dnb <- h5read(fname,'/Longitude')
         lat_dnb <- h5read(fname,'/Latitude')
-        #sza_dnb <- h5read(fname3,'/SolarZenithAngle')
         H5close()
         
         xmin = min(lon_dnb)
@@ -67,14 +77,14 @@ for(j in 1:length(iterator)){
         example =raster(matrix(NA,nrow=dim(lat_dnb)[1],ncol=dim(lat_dnb)[2]), xmn=xmin, xmx=xmax, 
     	ymn=ymin, ymx=ymax, crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0 ") )
         data = data.frame(lon=as.numeric(lon_dnb), lat = as.numeric(lat_dnb),dnb=as.numeric(dnb))
-        data[data==-1.5e-09,]=NA
+       
         coordinates(data) =~lon+lat
         a = rasterize(x=data,y=example,field='dnb',fun=mean,background=NA,na.rm=T)
         a@data@names = name_date_time
         a
     }
     
-    save(output, file=paste(getwd(),'/job_dnb_', j,'_v3.RData',sep=""))
+    save(output, file=paste(getwd(),'/job_dnb_', j,'_v4.RData',sep=""))
     remove(output)
     
     
@@ -85,7 +95,7 @@ for(j in 1:length(iterator)){
         fname <- d[i]
         
         # store names for later
-        name_date_time = substr(d[i],39,50)
+        name_date_time = substr(d[i],start_c,end_c)
 
         cmask <- h5read(fname,'/CloudMask')
         lon_cmask <- h5read(fname,'/Longitude2')
@@ -106,16 +116,15 @@ for(j in 1:length(iterator)){
     	            name_date_time,'_cld_v2_FAILED_DIF_LENGTHS.csv',sep=""))
     	return(NA)
     	}else{
-    
         data = data.frame(lon=as.numeric(lon_cmask), lat = as.numeric(lat_cmask),cloud=as.numeric(cmask))
         coordinates(data) =~lon+lat
-        cloud = rasterize(x=data,y=example,field='cloud',fun='last',background=NA,na.rm=T)
+        cloud = rasterize(x=data,y=example,field='cloud',fun='max',background=NA,na.rm=T)
         cloud@data@names = name_date_time
         cloud
     	}
        }
     
-    save(output2, file=paste(getwd(),'/job_cld_', j,'_v3.RData',sep=""))
+    save(output2, file=paste(getwd(),'/job_cld_', j,'_v4.RData',sep=""))
     remove(output2)
     
     
@@ -124,7 +133,7 @@ for(j in 1:length(iterator)){
         fname = d[i]
 
         # store names for later
-        name_date_time = substr(d[i],39,50)
+        name_date_time = substr(d[i],start_c,end_c)
         
         zenith = h5read(fname,'/LunarZenith')
         lon_cmask = h5read(fname,'/Longitude')
@@ -153,7 +162,7 @@ for(j in 1:length(iterator)){
         }
     }
     
-    save(output3, file=paste(getwd(),'/job_zen_', j,'_v3.RData',sep=""))
+    save(output3, file=paste(getwd(),'/job_zen_', j,'_v4.RData',sep=""))
     remove(output3)
     
     
@@ -163,7 +172,7 @@ for(j in 1:length(iterator)){
         fname = d[i]
        
 	# store names for later
-        name_date_time = substr(d[i],39,50)
+        name_date_time = substr(d[i],start_c,end_c)
 
         azimuth = h5read(fname,'/LunarAzimuth')
         lon_cmask = h5read(fname,'/Longitude')
@@ -192,6 +201,6 @@ for(j in 1:length(iterator)){
         }
     }
     
-    save(output4, file=paste(getwd(),'/job_azt_', j,'_v3.RData',sep=""))
+    save(output4, file=paste(getwd(),'/job_azt_', j,'_v4.RData',sep=""))
     remove(output4)
 }
