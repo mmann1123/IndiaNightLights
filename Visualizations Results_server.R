@@ -653,50 +653,73 @@ ggplot(combined_loc[combined_loc$pred_actual != 'predicted',], aes(count, dnb,co
 # read in each xls file and convert to long format and write to csv
 # install.packages('readxl')
 library(readxl)
-file_list = list.files('..//TestingData//',pattern='.xlsx')
+file_list = list.files('..//TestingData//',pattern='2015.xlsx')
 for(i in 1:length(file_list)){
 	a_location = read_excel(paste("..//TestingData//",file_list[i],sep=''), na = "99")
 	names(a_location) = c('location','date','hour',paste(1:60))	
+	head(a_location)
 
 	# put data into long form and sort 
 	longs =  melt(a_location,id=c('location','date','hour') )
 	names(longs) = c('location','date','hour','minute','voltage')
 	longs = longs[with(longs,order(location,date,hour)),]
+	head(longs)
 	#http://www.regexr.com/
 	write.csv(longs,paste('..//TestingData//',gsub('(.[a-z]+$)','\\2',file_list[i]),'.csv',sep=''))
 }
 
 # stack all files together
-file_list = list.files('..//TestingData//',pattern='.csv')
+file_list = list.files('..//TestingData//',pattern='2015.csv')
 voltage = read.csv(paste('..//TestingData//',file_list[1],sep=''))
 for(i in 2:length(file_list)){
 	inner =  read.csv(paste('..//TestingData//',file_list[i],sep=''))
 	voltage = rbind.fill(voltage,inner)
 }
 
-#save the output
+# save the output
 #save(voltage,file='..//TestingData//Voltage.RData')
+setwd('/groups/manngroup/India\ VIIRS/2015')
 load('..//TestingData//Voltage.RData')
 
 
 # deal with date time
 OlsonNames() # full list of time zones (only works on unix?)
 voltage$date.hour.minute = paste(voltage$date,sprintf('%02d',voltage$hour), sprintf('%02d',voltage$minute),sep='.')
-voltage$date.hour.minute =  as.character(strptime(voltage$date.hour.minute, '%Y-%m-%d.%H.%M'))
-voltage$date.hour.minute <- as.POSIXct(voltage$date.hour.minute, tz="Asia/Calcutta")
+voltage$date.hour.minute = as.character(strptime(voltage$date.hour.minute, '%Y-%m-%d.%H.%M'))
+voltage$date.hour.minute = as.POSIXct(voltage$date.hour.minute, tz="Asia/Calcutta")
 head(voltage$date.hour.minute)
 attributes(voltage$date.hour.minute)$tzone = 'UTC'  # convert Calcutta time to UTC
 voltage$date.time2 = voltage$date.hour.minute
+voltage$location = as.character(voltage$location)
 head(voltage$date.hour.minute)
 
 
 #same for all locations 
 resid_loc$date.time2 = strptime(resid_loc$date.time,'%Y%j.%H%M')
-resid_loc$date.time2 <- as.POSIXct(resid_loc$date.time2, tz="UTC")
+resid_loc$date.time2 = as.POSIXct(resid_loc$date.time2, tz="UTC")
 
 
 # match to closest time in local data 
 locales = unique(resid_loc$location)
+locales_v = unique(voltage$location)
+
+
+# change names to match 
+voltage$location[voltage$location=='Tilak Nagar- Nagpur'] = 'Tilak Nagar'
+# find partial matches
+for(i in 1:length(unique(voltage$location))){
+	print(paste(locales[i],' -- ',locales_v[pmatch(locales[i], locales_v)]))}
+# fill in holes create a dataframe as a lookup table
+look_up = data.frame(locales =locales,
+  	locales_v = apply(data.frame(locales),1,function(x) locales_v[pmatch(x, locales_v)]),
+	stringsAsFactors=F)
+look_up[4,2] = locales_v[37]
+look_up[5,2] = locales_v[36]
+look_up[27,2] = locales_v[23]
+look_up
+
+#
+
 locale = locales[8]
 test_site = resid_loc[resid_loc$location==locale,]
 test_voltage = voltage[voltage$location ==locale,]
