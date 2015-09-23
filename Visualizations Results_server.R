@@ -551,8 +551,8 @@ dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 #      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
 
 mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
-      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4))+I(mn_dnb<1e-7)*(ns(zen*azt,3)+
-      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
+      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,3)+ns(illum,3))+I(mn_dnb<1e-7)*(ns(zen*azt,3)+
+      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,3)+ns(illum,3)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
 
 summary(mean_lm)
 
@@ -738,10 +738,11 @@ for( i in 1:length(locales)){
 locale = locales[i]
 test_site = resid_loc[resid_loc$location==locale,]
 test_voltage = voltage[voltage$location ==locale,]
+if(dim(test_voltage)[1]==0){next}   # avoid missing data
 test_join = cbind(test_site, test_voltage[ sapply(test_site$date.time2, 
                       function(x) which.min(abs(difftime(x, test_voltage$date.time2)))), ])
+
 head(test_join,5)
-if(dim(test_voltage)[1]==0){next}
 
 test_join$count = 1:dim(test_join)[1]
 test_join$lights_out = 'on'
