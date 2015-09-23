@@ -490,12 +490,12 @@ head(dnb_values)
 
 
 # create descriptive statistics
-sd_dnb = aggregate(dnb~location,data=dnb_values,function(x) sd(x,na.rm=T))
+#sd_dnb = aggregate(dnb~location,data=dnb_values,function(x) sd(x,na.rm=T))
 mn_dnb = aggregate(dnb~location,data=dnb_values,function(x) mean(x,na.rm=T))
-names(sd_dnb)=c('location','sd_dnb')
+#names(sd_dnb)=c('location','sd_dnb')
 names(mn_dnb)=c('location','mn_dnb')
 dnb_values = join(dnb_values, mn_dnb)
-dnb_values = join(dnb_values, sd_dnb)
+#dnb_values = join(dnb_values, sd_dnb)
 
 
 ##########
@@ -547,8 +547,8 @@ dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 #mean_lm = lm(demean_dnb~0+I(dnb<1.099e-8)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)
 #	+I(dnb<4e-6)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
 
-mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
-      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
+#mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
+#      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
 
 mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
       ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4))+I(mn_dnb<1e-7)*(ns(zen*azt,3)+
@@ -659,6 +659,11 @@ for(i in 1:length(file_list)){
 	names(a_location) = c('location','date','hour',paste(1:60))	
 	head(a_location)
 
+	if(file_list[i]=='Other 28 ESMI MH Voltage Data 2015.xlsx'){
+	a_location$date = 	# convert file to proper date time 
+		format(strptime(a_location$date,'%m/%d/%Y',tz='Asia/Calcutta'),'%Y-%m-%d',usetz=F)
+		}
+
 	# put data into long form and sort 
 	longs =  melt(a_location,id=c('location','date','hour') )
 	names(longs) = c('location','date','hour','minute','voltage')
@@ -697,6 +702,7 @@ head(voltage$date.hour.minute)
 #same for all locations 
 resid_loc$date.time2 = strptime(resid_loc$date.time,'%Y%j.%H%M')
 resid_loc$date.time2 = as.POSIXct(resid_loc$date.time2, tz="UTC")
+head(resid_loc$date.time2)
 
 
 # match to closest time in local data 
@@ -705,10 +711,9 @@ locales_v = unique(voltage$location)
 
 
 # change names to match 
-voltage$location[voltage$location=='Tilak Nagar- Nagpur'] = 'Tilak Nagar'
 # find partial matches
 for(i in 1:length(unique(voltage$location))){
-	print(paste(locales[i],' -- ',locales_v[pmatch(locales[i], locales_v)]))}
+	print(paste(locales[i],' -MATCH- ',locales_v[pmatch(locales[i], locales_v)]))}
 # fill in holes create a dataframe as a lookup table
 look_up = data.frame(locales =locales,
   	locales_v = apply(data.frame(locales),1,function(x) locales_v[pmatch(x, locales_v)]),
@@ -718,25 +723,37 @@ look_up[5,2] = locales_v[36]
 look_up[27,2] = locales_v[23]
 look_up
 
-#
 
-locale = locales[8]
+# switch names out use non-voltage data names 
+for(i in 1:length(look_up$locales)){
+	print(i)
+	voltage$location[voltage$location == look_up$locales_v[i] ] = look_up$locales[i]
+}
+# double check that it worked
+ sort(unique(resid_loc$location))
+ sort(unique(voltage$location))
+
+# create locale dnb and 
+for( i in 1:length(locales)){
+locale = locales[i]
 test_site = resid_loc[resid_loc$location==locale,]
 test_voltage = voltage[voltage$location ==locale,]
 test_join = cbind(test_site, test_voltage[ sapply(test_site$date.time2, 
                       function(x) which.min(abs(difftime(x, test_voltage$date.time2)))), ])
-head(test_join,15)
-if(dim(test_voltage)[1]==0){stop()}
-
+head(test_join,5)
+if(dim(test_voltage)[1]==0){next}
 
 test_join$count = 1:dim(test_join)[1]
 test_join$lights_out = 'on'
 test_join$lights_out[test_join$voltage==0]='off'
-ggplot(test_join, aes(count, dnb,colour=lights_out))+geom_point() + 
+a = ggplot(test_join, aes(count, dnb,colour=lights_out))+geom_point() + 
      geom_vline(xintercept = test_join$count[test_join$voltage==0],colour='red',alpha=0.25)+
-     geom_vline(xintercept = test_join$count[is.na(test_join$voltage)],colour='blue',alpha=0.25)
-remove(test_join) # USE: to avoid mismatch between locations
+     geom_vline(xintercept = test_join$count[is.na(test_join$voltage)],colour='blue',alpha=0.25)+
+     ggtitle(locale)
+ggsave(a, file=paste('..//TestingData//plot_',locale,'.pdf',sep=''), width=4, height=4)
 
+remove(test_join) # USE: to avoid mismatch between locations
+print(locale)}
 
 
 
