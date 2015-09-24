@@ -112,7 +112,12 @@ sampled = spsample(PolygonFromExtent(extent(72, 81.50, 15, 22.5),crs=CRS('+proj=
 dnb_values = extract(dnb_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
 zen_values = extract(zen_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)
 azt_values = extract(azt_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)
-time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
+time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v4)",replacement = "\\2")
+
+# change time stamps 
+names(dnb_values) = time_stamp_extract
+names(zen_values) = time_stamp_extract
+names(azt_values) = time_stamp_extract
 
 
 # extract local testing data 
@@ -125,13 +130,20 @@ jumba.df = data.frame(STATE='MH', DISTRICT.CITY="NA", LOCATION='Jumda',LAT=20.01
 locations=rbind.fill(locations,jumba.df)
 locations=rbind.fill(locations,locations2)
 head(locations)
+
 # convert to spatial objects and extract values
 coordinates(locations)= ~LON+LAT
 proj4string(locations) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
 dnb_values_loc = extract(dnb_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
 zen_values_loc = extract(zen_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
 azt_values_loc  = extract(azt_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
-time_stamp_extract_loc = gsub(x=colnames(dnb_values_loc),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
+time_stamp_extract_loc = gsub(x=colnames(dnb_values_loc),pattern = "(.*X)(.*)(.*_dnb_v4)",replacement = "\\2")
+
+# change time stamps
+names(dnb_values_loc) = time_stamp_extract_loc
+names(zen_values_loc) = time_stamp_extract_loc
+names(azt_values_loc) = time_stamp_extract_loc
+
 
 
 
@@ -143,6 +155,7 @@ put_in_long2 <- function(wide_data,abreviation){
         wide_data <- melt(wide_data )
         names(wide_data)=c('location','date.time',paste(abreviation))
         head(wide_data)
+	if(class(wide_data$date.time)=='factor'){wide_data$date.time=as.character(wide_data$date.time)}
         return(wide_data)
 }
 put_in_long_loc <- function(wide_data,abreviation){
@@ -151,6 +164,7 @@ put_in_long_loc <- function(wide_data,abreviation){
         wide_data = subset(wide_data,select=-c(ID)) # extra variable was added, remove
         wide_data <- melt(wide_data )
         names(wide_data)=c('location','date.time',paste(abreviation))
+        if(class(wide_data$date.time)=='factor'){wide_data$date.time=as.character(wide_data$date.time)}
         head(wide_data)
         return(wide_data)
 }
@@ -173,13 +187,14 @@ phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,se
 
 
 # join in moon and dnb
+
 dnb_values = join(dnb_values,zen_values) # add moon characteristics to dnb values
 dnb_values = join(dnb_values,azt_values)
 dnb_values = join(dnb_values, phase)
 dnb_values_loc = join(dnb_values_loc,zen_values_loc) # add moon characteristics to dnb values
 dnb_values_loc = join(dnb_values_loc,azt_values_loc)
 dnb_values_loc = join(dnb_values_loc,phase)
-head(dnb_values)
+head(dnb_values,50)
 head(dnb_values_loc)
 
 
@@ -257,12 +272,18 @@ dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 #mean_lm = lm(demean_dnb~0+I(dnb<1.099e-8)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)
 #	+I(dnb<4e-6)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
 
-#mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
-#      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
+mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
+      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
 
 mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
       ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,3)+ns(illum,3))+I(mn_dnb<1e-7)*(ns(zen*azt,3)+
       ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,3)+ns(illum,3)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
+
+mean_lm = lm(demean_dnb~0+I(ns(zen*azt,3)+
+      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
+
+
+
 
 summary(mean_lm)
 
