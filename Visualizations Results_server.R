@@ -51,12 +51,16 @@ azt_stack = stack(azt)
 # Extract dates
 time_stamp_dnb = gsub(x=names(dnb_stack),pattern = "(.*X)(.*)(.*_dnb_v4)",replacement = "\\2")
 time_stamp_dnb = strptime(time_stamp_dnb,"%Y%j.%H%M", tz = 'UTC')
+names(dnb_stack) = format(time_stamp_dnb,"%Y%j.%H%M",usetz=F)
 time_stamp_cld = gsub(x=names(cld_stack),pattern = "(.*X)(.*)(.*_cld_v4)",replacement = "\\2")
 time_stamp_cld = strptime(time_stamp_cld,"%Y%j.%H%M", tz = 'UTC')
+names(cld_stack) = format(time_stamp_cld,"%Y%j.%H%M",usetz=F)
 time_stamp_zen = gsub(x=names(zen_stack),pattern = "(.*X)(.*)(.*_zen_v4)",replacement = "\\2")
 time_stamp_zen = strptime(time_stamp_zen,"%Y%j.%H%M", tz = 'UTC')
+names(zen_stack) = format(time_stamp_zen,"%Y%j.%H%M",usetz=F)
 time_stamp_azt = gsub(x=names(azt_stack),pattern = "(.*X)(.*)(.*_azt_v4)",replacement = "\\2")
 time_stamp_azt = strptime(time_stamp_azt,"%Y%j.%H%M", tz = 'UTC')
+names(azt_stack) = format(time_stamp_azt,"%Y%j.%H%M",usetz=F)
 
 # not all stacks have same dates
 all.equal(time_stamp_dnb,time_stamp_cld)
@@ -91,6 +95,7 @@ save(azt_stack,file = 'azt_stack_wo_cld.RData')
 
 
 # load data
+rm(list=ls())
 setwd('/groups/manngroup/India\ VIIRS/2015')
 
 load('dnb_stack_wo_cld.RData')    # start here cloud free images stored here.
@@ -112,7 +117,7 @@ sampled = spsample(PolygonFromExtent(extent(72, 81.50, 15, 22.5),crs=CRS('+proj=
 dnb_values = extract(dnb_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
 zen_values = extract(zen_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)
 azt_values = extract(azt_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)
-time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*_dnb_v4)",replacement = "\\2")
+time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*)",replacement = "\\2")
 
 # change time stamps 
 names(dnb_values) = time_stamp_extract
@@ -131,13 +136,15 @@ locations=rbind.fill(locations,jumba.df)
 locations=rbind.fill(locations,locations2)
 head(locations)
 
+
 # convert to spatial objects and extract values
 coordinates(locations)= ~LON+LAT
 proj4string(locations) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
 dnb_values_loc = extract(dnb_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
 zen_values_loc = extract(zen_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
 azt_values_loc  = extract(azt_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
-time_stamp_extract_loc = gsub(x=colnames(dnb_values_loc),pattern = "(.*X)(.*)(.*_dnb_v4)",replacement = "\\2")
+time_stamp_extract_loc = gsub(x=colnames(dnb_values_loc),pattern = "(.*X)(.*)(.*)",replacement = "\\2")
+
 
 # change time stamps
 names(dnb_values_loc) = time_stamp_extract_loc
@@ -194,8 +201,11 @@ dnb_values = join(dnb_values, phase)
 dnb_values_loc = join(dnb_values_loc,zen_values_loc) # add moon characteristics to dnb values
 dnb_values_loc = join(dnb_values_loc,azt_values_loc)
 dnb_values_loc = join(dnb_values_loc,phase)
-head(dnb_values,50)
-head(dnb_values_loc)
+head(dnb_values[20000:25000,],50)
+head(dnb_values_loc[50:60,])
+
+
+# LOAD DNB_VALUES --------------------------------------------------------------
 
 
 # save output to load quickly
@@ -245,17 +255,15 @@ dnb_values = join(dnb_values, mn_dnb)
 #table(dnb_values$kmn)
 
 ## OLD KMEANS METHOD
-#dnb_num = data.frame(dnb=dnb_values$dnb)   # set up a dataframe to store row numbers so can be joined later
-#kmn2 = kmeans(na.omit(dnb_num),3)
-#kmn2 = data.frame(row = names(kmn2$cluster),kmn2 = kmn2$cluster)
-#dnb_values$row = row.names(dnb_values)
-#dnb_values = join(dnb_values, kmn2,by='row')
-#head(dnb_values)
-#table(dnb_values$kmn2)
-
-
-## get summary of old kmeans breaks 
-#tapply(dnb_values$dnb, dnb_values$kmn2, summary)
+dnb_num = data.frame(dnb=dnb_values$dnb)   # set up a dataframe to store row numbers so can be joined later
+kmn2 = kmeans(na.omit(dnb_num),3)
+kmn2 = data.frame(row = names(kmn2$cluster),kmn2 = kmn2$cluster)
+dnb_values$row = row.names(dnb_values)
+dnb_values = join(dnb_values, kmn2,by='row')
+head(dnb_values)
+table(dnb_values$kmn2)
+# get summary of old kmeans breaks 
+tapply(dnb_values$dnb, dnb_values$kmn2, summary)
 
 
 #########
@@ -272,25 +280,23 @@ dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 #mean_lm = lm(demean_dnb~0+I(dnb<1.099e-8)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)
 #	+I(dnb<4e-6)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
 
-mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
-      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
+#mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
+#      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
+#
+#mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+   
+#      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,3)+ns(illum,3))+I(mn_dnb<1e-7)*(ns(zen*azt,3)+
+#      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,3)+ns(illum,3)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
 
-mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
-      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,3)+ns(illum,3))+I(mn_dnb<1e-7)*(ns(zen*azt,3)+
-      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,3)+ns(illum,3)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
-
-mean_lm = lm(demean_dnb~0+I(ns(zen*azt,3)+
-      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
-
-
-
+########### REGRESSIONS FOR V4 DATA ##################
+mean_lm = lm(demean_dnb~0+I(factor(kmn2))*ns(zen*azt,3)+ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4),
+           data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
 
 summary(mean_lm)
 
 
 # compare actual and predicted
 remove(actual, pred, resid)
-actual = na.omit(dnb_values)
+actual = na.omit(dnb_values[dnb_values$type=='training',])
 actual$count = 1:dim(actual)[1]
 actual$pred_actual = 'actual'
 
@@ -382,35 +388,49 @@ ggplot(combined_loc[combined_loc$pred_actual != 'predicted',], aes(count, dnb,co
 # Compare to actual outage data  ----------------------------------------------------------
 
 # read in each xls file and convert to long format and write to csv
+# only need to run this the first time... processing unformated files
 # install.packages('readxl')
-library(readxl)
-file_list = list.files('..//TestingData//',pattern='2015.xlsx')
-for(i in 1:length(file_list)){
-	a_location = read_excel(paste("..//TestingData//",file_list[i],sep=''), na = "99")
-	names(a_location) = c('location','date','hour',paste(1:60))	
-	head(a_location)
-
-	if(file_list[i]=='Other 28 ESMI MH Voltage Data 2015.xlsx'){
-	a_location$date = 	# convert file to proper date time 
-		format(strptime(a_location$date,'%m/%d/%Y',tz='Asia/Calcutta'),'%Y-%m-%d',usetz=F)
-		}
-
-	# put data into long form and sort 
-	longs =  melt(a_location,id=c('location','date','hour') )
-	names(longs) = c('location','date','hour','minute','voltage')
-	longs = longs[with(longs,order(location,date,hour)),]
-	head(longs)
-	#http://www.regexr.com/
-	write.csv(longs,paste('..//TestingData//',gsub('(.[a-z]+$)','\\2',file_list[i]),'.csv',sep=''))
-}
-
+#library(readxl)
+#file_list = list.files('..//TestingData//',pattern='2015.xlsx')
+#for(i in 1:length(file_list)){
+#	a_location = read_excel(paste("..//TestingData//",file_list[i],sep=''), na = "99")
+#	names(a_location) = c('location','date','hour',paste(1:60))	
+#	head(a_location)
+#
+#	if(file_list[i]=='Other 28 ESMI MH Voltage Data 2015.xlsx'){
+#	a_location$date = 	# convert file to proper date time 
+#		format(strptime(a_location$date,'%m/%d/%Y',tz='Asia/Calcutta'),'%Y-%m-%d',usetz=F)
+#		}
+#
+#	# put data into long form and sort 
+#	longs =  melt(a_location,id=c('location','date','hour') )
+#	names(longs) = c('location','date','hour','minute','voltage')
+#	longs = longs[with(longs,order(location,date,hour)),]
+#	head(longs)
+#	#http://www.regexr.com/
+#	write.csv(longs,paste('..//TestingData//',gsub('(.[a-z]+$)','\\2',file_list[i]),'.csv',sep=''))
+#}
+#
 # stack all files together
+#date.time = strptime(dnb_values$date.time,'%Y%j.%H%M',tz='UTM')
+#hour = format(date.time,'%H',usetz=F)
+#minute = format(date.time,'%M',usetz=F)
+
+
+
 file_list = list.files('..//TestingData//',pattern='2015.csv')
 voltage = read.csv(paste('..//TestingData//',file_list[1],sep=''))
+voltage$hour = as.numeric(voltage$hour) + 1
+print(unique(voltage$hour))
+head(voltage)
 for(i in 2:length(file_list)){
 	inner =  read.csv(paste('..//TestingData//',file_list[i],sep=''))
+	print(class(inner$hour)) 
+	inner$hour = as.numeric(inner$hour) + 1
+	print(unique(inner$hour))
 	voltage = rbind.fill(voltage,inner)
 }
+
 
 # save the output
 #save(voltage,file='..//TestingData//Voltage.RData')
@@ -464,27 +484,28 @@ for(i in 1:length(look_up$locales)){
  sort(unique(resid_loc$location))
  sort(unique(voltage$location))
 
+
 # create locale dnb and 
 for( i in 1:length(locales)){
-locale = locales[i]
-test_site = resid_loc[resid_loc$location==locale,]
-test_voltage = voltage[voltage$location ==locale,]
-if(dim(test_voltage)[1]==0){next}   # avoid missing data
-test_join = cbind(test_site, test_voltage[ sapply(test_site$date.time2, 
+	locale = locales[i]
+	test_site = resid_loc[resid_loc$location==locale,]
+	test_voltage = voltage[voltage$location ==locale,]
+	if(dim(test_voltage)[1]==0){next}   # avoid missing data
+	test_join = join(test_site, test_voltage[ sapply(test_site$date.time2,
                       function(x) which.min(abs(difftime(x, test_voltage$date.time2)))), ])
+	head(test_join,5)
 
-head(test_join,5)
+	test_join$count = 1:dim(test_join)[1]
+	test_join$lights_out = 'on'
+	test_join$lights_out[test_join$voltage==0]='off'
+	test_join$lights_out[is.na(test_join$voltage)]='No Data'
+	a = ggplot(test_join, aes(count, dnb,colour=lights_out))+geom_point() + 
+	     geom_vline(xintercept = test_join$count[test_join$voltage==0],colour='red',alpha=0.25)+
+	     geom_vline(xintercept = test_join$count[is.na(test_join$voltage)],colour='blue',alpha=0.25)+
+	     ggtitle(locale)
+	ggsave(a, file=paste('..//TestingData//plot_',locale,'.png',sep=''), width=6, height=4)
 
-test_join$count = 1:dim(test_join)[1]
-test_join$lights_out = 'on'
-test_join$lights_out[test_join$voltage==0]='off'
-a = ggplot(test_join, aes(count, dnb,colour=lights_out))+geom_point() + 
-     geom_vline(xintercept = test_join$count[test_join$voltage==0],colour='red',alpha=0.25)+
-     geom_vline(xintercept = test_join$count[is.na(test_join$voltage)],colour='blue',alpha=0.25)+
-     ggtitle(locale)
-ggsave(a, file=paste('..//TestingData//plot_',locale,'.pdf',sep=''), width=4, height=4)
-
-remove(test_join) # USE: to avoid mismatch between locations
+	remove(test_join) # USE: to avoid mismatch between locations
 print(locale)}
 
 
