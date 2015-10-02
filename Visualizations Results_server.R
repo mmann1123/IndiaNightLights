@@ -1,7 +1,7 @@
 
 # Run the following in bash before starting R
 # module load proj.4/4.8.0
-# module load gdal
+# module load gdal/gcc/1.11
 # module load R/3.0.2
 # module load gcc/4.9.0
 # R
@@ -205,6 +205,7 @@ head(dnb_values[20000:25000,],50)
 head(dnb_values_loc[50:60,])
 
 
+
 # LOAD DNB_VALUES --------------------------------------------------------------
 
 
@@ -254,16 +255,33 @@ dnb_values = join(dnb_values, mn_dnb)
 #table(na_dnb$kmn)
 #table(dnb_values$kmn)
 
+
 ## OLD KMEANS METHOD
-dnb_num = data.frame(dnb=dnb_values$dnb)   # set up a dataframe to store row numbers so can be joined later
+#dnb_num =  data.frame(dnb=dnb_values$dnb) # set up a dataframe to store row numbers so can be joined later
+#kmn2 = kmeans(na.omit(dnb_num),3)  
+#kmn2 = data.frame(row = names(kmn2$cluster),kmn2 = kmn2$cluster)
+#dnb_values$row = row.names(dnb_values)
+#dnb_values = join(dnb_values, kmn2,by='row')
+#head(dnb_values)
+#table(dnb_values$kmn2)
+## get summary of old kmeans breaks 
+#tapply(dnb_values$dnb, dnb_values$kmn2, summary)
+
+
+# New KMEANS out of sample
+source('/groups/manngroup/India VIIRS/IndiaNightLights/clusters.R')
+dnb_num =  data.frame(dnb=dnb_values$dnb) # set up a dataframe to store row numbers so can be joined later
 kmn2 = kmeans(na.omit(dnb_num),3)
-kmn2 = data.frame(row = names(kmn2$cluster),kmn2 = kmn2$cluster)
-dnb_values$row = row.names(dnb_values)
-dnb_values = join(dnb_values, kmn2,by='row')
-head(dnb_values)
-table(dnb_values$kmn2)
-# get summary of old kmeans breaks 
-tapply(dnb_values$dnb, dnb_values$kmn2, summary)
+# calculate cluster membership out of sample for large dataset
+library(foreach)
+library(doParallel)
+registerDoParallel(32)
+iterator_groups = split(1:length(dnb_values$dnb), cut(1:length(dnb_values$dnb),32))   
+dnb_values$kmn2 = foreach(group=1:length(iterator_groups), .inorder=T, .combine = c) %dopar% { 
+  x1 = data.frame(dnb_values$dnb[iterator_groups[[group]]])
+  clusters(x1,centers = kmn2[["centers"]])
+}
+stopImplicitCluster()
 
 
 #########
@@ -391,31 +409,30 @@ ggplot(combined_loc[combined_loc$pred_actual != 'predicted',], aes(count, dnb,co
 # only need to run this the first time... processing unformated files
 # install.packages('readxl')
 #library(readxl)
-#file_list = list.files('..//TestingData//',pattern='2015.xlsx')
-#for(i in 1:length(file_list)){
-#	a_location = read_excel(paste("..//TestingData//",file_list[i],sep=''), na = "99")
-#	names(a_location) = c('location','date','hour',paste(1:60))	
-#	head(a_location)
-#
-#	if(file_list[i]=='Other 28 ESMI MH Voltage Data 2015.xlsx'){
-#	a_location$date = 	# convert file to proper date time 
-#		format(strptime(a_location$date,'%m/%d/%Y',tz='Asia/Calcutta'),'%Y-%m-%d',usetz=F)
-#		}
-#
-#	# put data into long form and sort 
-#	longs =  melt(a_location,id=c('location','date','hour') )
-#	names(longs) = c('location','date','hour','minute','voltage')
-#	longs = longs[with(longs,order(location,date,hour)),]
-#	head(longs)
-#	#http://www.regexr.com/
-#	write.csv(longs,paste('..//TestingData//',gsub('(.[a-z]+$)','\\2',file_list[i]),'.csv',sep=''))
-#}
-#
+file_list = list.files('..//TestingData//',pattern='2015.xlsx')
+for(i in 1:length(file_list)){
+	print(i)
+	a_location = read_excel(paste("..//TestingData//",file_list[i],sep=''), na = "NA")
+	names(a_location) = c('location','date','hour',paste(1:60))	
+	head(a_location)
+
+	if(file_list[i]=='Other 28 ESMI MH Voltage Data 2015.xlsx'){
+		a_location$date = 	# convert file to proper date time 
+		format(strptime(a_location$date,'%m/%d/%Y',tz='Asia/Calcutta'),'%Y-%m-%d',usetz=F)
+		}
+	# put data into long form and sort 
+	longs =  melt(a_location,id=c('location','date','hour') )
+	names(longs) = c('location','date','hour','minute','voltage')
+	longs = longs[with(longs,order(location,date,hour)),]
+	head(longs)
+	#http://www.regexr.com/
+	write.csv(longs,paste('..//TestingData//',gsub('(.[a-z]+$)','\\2',file_list[i]),'.csv',sep=''))
+}
+
 # stack all files together
 #date.time = strptime(dnb_values$date.time,'%Y%j.%H%M',tz='UTM')
 #hour = format(date.time,'%H',usetz=F)
 #minute = format(date.time,'%M',usetz=F)
-
 
 
 file_list = list.files('..//TestingData//',pattern='2015.csv')
@@ -439,7 +456,7 @@ load('..//TestingData//Voltage.RData')
 
 
 # deal with date time
-OlsonNames() # full list of time zones (only works on unix?)
+#OlsonNames() # full list of time zones (only works on unix?)
 voltage$date.hour.minute = paste(voltage$date,sprintf('%02d',voltage$hour), sprintf('%02d',voltage$minute),sep='.')
 voltage$date.hour.minute = as.character(strptime(voltage$date.hour.minute, '%Y-%m-%d.%H.%M'))
 voltage$date.hour.minute = as.POSIXct(voltage$date.hour.minute, tz="Asia/Calcutta")
@@ -497,14 +514,19 @@ for( i in 1:length(locales)){
 
 	test_join$count = 1:dim(test_join)[1]
 	test_join$lights_out = 'on'
-	test_join$lights_out[test_join$voltage==0]='off'
+	test_join$lights_out[test_join$voltage<=131]='off'  #test_join$voltage==0
 	test_join$lights_out[is.na(test_join$voltage)]='No Data'
-	a = ggplot(test_join, aes(count, dnb,colour=lights_out))+geom_point() + 
-	     geom_vline(xintercept = test_join$count[test_join$voltage==0],colour='red',alpha=0.25)+
-	     geom_vline(xintercept = test_join$count[is.na(test_join$voltage)],colour='blue',alpha=0.25)+
-	     ggtitle(locale)
-	ggsave(a, file=paste('..//TestingData//plot_',locale,'.png',sep=''), width=6, height=4)
+	if(length(unique(test_join$lights_out))==3){color_codes=c("#CC00CC","#FF0000","#00CC00")}
+        if(length(unique(test_join$lights_out))==2){color_codes=c("#CC00CC","#00CC00")}
+        if(length(unique(test_join$lights_out))==1){color_codes=c("#CC00CC","#00CC00")}
 
+	a = ggplot(test_join, aes(count, dnb,colour=lights_out)) + 
+	     #geom_vline(xintercept = test_join$count[test_join$voltage==0],colour='red',alpha=0.25,, show_guide=T)+
+	     geom_vline(xintercept = test_join$count[is.na(test_join$voltage)],colour='blue',alpha=0.25, show_guide=T)+
+             geom_vline(xintercept = test_join$count[test_join$illum>50],colour='yellow',alpha=0.25, show_guide=T)+
+	     geom_point()+ scale_fill_manual(values = color_codes)+
+	ggtitle(locale)
+	ggsave(a, file=paste('..//TestingData//plot_',locale,'.png',sep=''), width=6, height=4)
 	remove(test_join) # USE: to avoid mismatch between locations
 print(locale)}
 
