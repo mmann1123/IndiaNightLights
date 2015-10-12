@@ -42,17 +42,18 @@ substr(d[1],start_c,end_c)  # check here
 version = 'v5'
 
 
+################################################
 # New rasterize technique
 e1 = extent(72, 81.50, 15, 22.5)
 
 #figure out number of rows and columns to get close to 0.00675 resolution
-res = 0.00675
+res = 0.00784                     # 0.00675
 cols = round((e1[2]-e1[1])/res,0)
 rows = round((e1[4]-e1[3])/res,0)
 
 # set a raster to resample to with Maharastra extent
 #   originally was nrows=1000, ncols=1000
-s<-raster(e1, nrows=rows, ncols=cols, crs=CRS('+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0'))
+example = raster(e1, nrows=rows, ncols=cols, crs=CRS('+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0'))
 
 source('/groups/manngroup/India VIIRS/IndiaNightLights/test_intersection.R')
 
@@ -96,14 +97,22 @@ for(j in 1:length(iterator)){
         xmax = max(lon_dnb)
         ymax = max(lat_dnb)
         
-        example =raster(matrix(NA,nrow=dim(lat_dnb)[1],ncol=dim(lat_dnb)[2]), xmn=xmin, xmx=xmax, 
-        	ymn=ymin, ymx=ymax, crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0 ") )
+        #example =raster(matrix(NA,nrow=dim(lat_dnb)[1],ncol=dim(lat_dnb)[2]), xmn=xmin, xmx=xmax, 
+        #	ymn=ymin, ymx=ymax, crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0 ") )
         data = data.frame(lon=as.numeric(lon_dnb), lat = as.numeric(lat_dnb),dnb=as.numeric(dnb))
        
         coordinates(data) =~lon+lat
-        a = rasterize(x=data,y=example,field='dnb',fun=mean,background=NA,na.rm=T)
-        a@data@names = name_date_time
-        a
+        #a = rasterize(x=data,y=example,field='dnb',fun=mean,background=NA,na.rm=T)
+        #a@data@names = name_date_time
+        #a
+	
+	if( test_intersection(data,example) ){
+		a = rasterize(x=data,y=example,field='dnb',fun=mean,background=NA,na.rm=T)
+        	a@data@names = name_date_time
+        	a
+	}
+
+
     }
     
     save(output, file=paste(getwd(),'/job_dnb_', j,'_',version,'.RData',sep=""))
@@ -128,8 +137,8 @@ for(j in 1:length(iterator)){
         ymin = min(lat_cmask)
         xmax = max(lon_cmask)
         ymax = max(lat_cmask)
-        example =raster(matrix(NA,nrow=dim(lat_cmask)[1],ncol=dim(lat_cmask)[2]),xmn=xmin,xmx=xmax,
-    	ymn=ymin,ymx=ymax,crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+        #example =raster(matrix(NA,nrow=dim(lat_cmask)[1],ncol=dim(lat_cmask)[2]),xmn=xmin,xmx=xmax,
+    	#ymn=ymin,ymx=ymax,crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
         
          if(length(lon_cmask)!=length(lat_cmask)| length(lon_cmask) !=length(cmask)){
     	#special case for non matching data lengths
@@ -140,16 +149,27 @@ for(j in 1:length(iterator)){
     	}else{
         data = data.frame(lon=as.numeric(lon_cmask), lat = as.numeric(lat_cmask),cloud=as.numeric(cmask))
         coordinates(data) =~lon+lat
-        cloud = rasterize(x=data,y=example,field='cloud',fun='max',background=NA,na.rm=T)
-        cloud@data@names = name_date_time
-        cloud
-    	}
+        
+	#cloud = rasterize(x=data,y=example,field='cloud',fun='max',background=NA,na.rm=T)
+        #cloud@data@names = name_date_time
+        #cloud
+
+             if( test_intersection(data,example) ){
+                cloud = rasterize(x=data,y=example,field='cloud',fun='max',background=NA,na.rm=T)
+                cloud@data@names = name_date_time
+	        # deal with courser resolution
+		cloud = focal(cloud, w=matrix(1,3,3),fun=function(x){max(x,na.rm=T)})
+		cloud
+             }
+
+    	  }
        }
     
     save(output2, file=paste(getwd(),'/job_cld_', j,'_',version,'.RData',sep=""))
     remove(output2)
     
     
+
     output3 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
         print(i)
         fname = d[i]
@@ -166,8 +186,8 @@ for(j in 1:length(iterator)){
         ymin = min(lat_cmask)
         xmax = max(lon_cmask)
         ymax = max(lat_cmask)
-        example = raster(matrix(NA,nrow=dim(lat_cmask)[1],ncol=dim(lat_cmask)[2]),xmn=xmin,xmx=xmax,
-                        ymn=ymin,ymx=ymax,crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+        #example = raster(matrix(NA,nrow=dim(lat_cmask)[1],ncol=dim(lat_cmask)[2]),xmn=xmin,xmx=xmax,
+        #                ymn=ymin,ymx=ymax,crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
         
         if(length(lon_cmask)!=length(lat_cmask)| length(lon_cmask) !=length(zenith)){
             #special case for non matching data lengths
@@ -178,9 +198,15 @@ for(j in 1:length(iterator)){
         }else{
             data = data.frame(lon=as.numeric(lon_cmask), lat = as.numeric(lat_cmask),zenith=as.numeric(zenith))
             coordinates(data) =~lon+lat
-            zenith = rasterize(x=data,y=example,field='zenith',fun='last',background=NA,na.rm=T)
-            zenith@data@names = name_date_time
-            zenith
+            #zenith = rasterize(x=data,y=example,field='zenith',fun='last',background=NA,na.rm=T)
+            #zenith@data@names = name_date_time
+            #zenith
+	     if( test_intersection(data,example) ){
+                zenith = rasterize(x=data,y=example,field='zenith',fun='last',background=NA,na.rm=T)
+                zenith@data@names = name_date_time
+                zenith
+             }
+
         }
     }
     
@@ -205,8 +231,8 @@ for(j in 1:length(iterator)){
         ymin = min(lat_cmask)
         xmax = max(lon_cmask)
         ymax = max(lat_cmask)
-        example = raster(matrix(NA,nrow=dim(lat_cmask)[1],ncol=dim(lat_cmask)[2]),xmn=xmin,xmx=xmax,
-                         ymn=ymin,ymx=ymax,crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+        #example = raster(matrix(NA,nrow=dim(lat_cmask)[1],ncol=dim(lat_cmask)[2]),xmn=xmin,xmx=xmax,
+        #                 ymn=ymin,ymx=ymax,crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
         
         if(length(lon_cmask)!=length(lat_cmask)| length(lon_cmask) !=length(azimuth)){
             #special case for non matching data lengths
@@ -217,9 +243,16 @@ for(j in 1:length(iterator)){
         }else{
             data = data.frame(lon=as.numeric(lon_cmask), lat = as.numeric(lat_cmask),azimuth=as.numeric(azimuth))
             coordinates(data) =~lon+lat
-            azimuth = rasterize(x=data,y=example,field='azimuth',fun='last',background=NA,na.rm=T)
-            azimuth@data@names = name_date_time
-            azimuth
+            #azimuth = rasterize(x=data,y=example,field='azimuth',fun='last',background=NA,na.rm=T)
+            #azimuth@data@names = name_date_time
+            #azimuth
+
+	    if( test_intersection(data,example) ){
+                azimuth = rasterize(x=data,y=example,field='azimuth',fun='last',background=NA,na.rm=T)
+                azimuth@data@names = name_date_time
+                azimuth
+             }
+
         }
     }
     
