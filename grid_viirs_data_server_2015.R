@@ -29,10 +29,32 @@ setwd("/groups/manngroup/India VIIRS/2015")   # all May2015 .h5 files moved to /
 d = list.files(path=getwd(),pattern=glob2rx("*h5"),full.names=T,include.dirs=T)
 iterator = split(1:length(d), cut(1:length(d),13))   #11
 
-#check output names
+
+################################################
+# parameter setup 
+
+# check output names
 start_c = 36
 end_c = 47
-substr(d[1],start_c,end_c)
+substr(d[1],start_c,end_c)  # check here
+
+# version number of output name
+version = 'v5'
+
+
+# New rasterize technique
+e1 = extent(72, 81.50, 15, 22.5)
+
+#figure out number of rows and columns to get close to 0.00675 resolution
+res = 0.00675
+cols = round((e1[2]-e1[1])/res,0)
+rows = round((e1[4]-e1[3])/res,0)
+
+# set a raster to resample to with Maharastra extent
+#   originally was nrows=1000, ncols=1000
+s<-raster(e1, nrows=rows, ncols=cols, crs=CRS('+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0'))
+
+source('/groups/manngroup/India VIIRS/IndiaNightLights/test_intersection.R')
 
 
 #iterate through smaller groups
@@ -75,7 +97,7 @@ for(j in 1:length(iterator)){
         ymax = max(lat_dnb)
         
         example =raster(matrix(NA,nrow=dim(lat_dnb)[1],ncol=dim(lat_dnb)[2]), xmn=xmin, xmx=xmax, 
-    	ymn=ymin, ymx=ymax, crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0 ") )
+        	ymn=ymin, ymx=ymax, crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0 ") )
         data = data.frame(lon=as.numeric(lon_dnb), lat = as.numeric(lat_dnb),dnb=as.numeric(dnb))
        
         coordinates(data) =~lon+lat
@@ -84,7 +106,7 @@ for(j in 1:length(iterator)){
         a
     }
     
-    save(output, file=paste(getwd(),'/job_dnb_', j,'_v4.RData',sep=""))
+    save(output, file=paste(getwd(),'/job_dnb_', j,'_',version,'.RData',sep=""))
     remove(output)
     
     
@@ -124,7 +146,7 @@ for(j in 1:length(iterator)){
     	}
        }
     
-    save(output2, file=paste(getwd(),'/job_cld_', j,'_v4.RData',sep=""))
+    save(output2, file=paste(getwd(),'/job_cld_', j,'_',version,'.RData',sep=""))
     remove(output2)
     
     
@@ -162,7 +184,7 @@ for(j in 1:length(iterator)){
         }
     }
     
-    save(output3, file=paste(getwd(),'/job_zen_', j,'_v4.RData',sep=""))
+    save(output3, file=paste(getwd(),'/job_zen_', j,'_',version,'.RData',sep=""))
     remove(output3)
     
     
@@ -201,6 +223,6 @@ for(j in 1:length(iterator)){
         }
     }
     
-    save(output4, file=paste(getwd(),'/job_azt_', j,'_v4.RData',sep=""))
+    save(output4, file=paste(getwd(),'/job_azt_', j,'_',version,'.RData',sep=""))
     remove(output4)
 }

@@ -226,59 +226,26 @@ head(dnb_values)
 
 
 # create descriptive statistics
-#sd_dnb = aggregate(dnb~location,data=dnb_values,function(x) sd(x,na.rm=T))
+sd_dnb = aggregate(dnb~location,data=dnb_values,function(x) sd(x,na.rm=T))
 mn_dnb = aggregate(dnb~location,data=dnb_values,function(x) mean(x,na.rm=T))
-#names(sd_dnb)=c('location','sd_dnb')
+names(sd_dnb)=c('location','sd_dnb')
 names(mn_dnb)=c('location','mn_dnb')
 dnb_values = join(dnb_values, mn_dnb)
-#dnb_values = join(dnb_values, sd_dnb)
+dnb_values = join(dnb_values, sd_dnb)
 
 
-##########
-## find k-means = 3 groups based on dnb values (based on mean  of values)
-## NOT WORKING COMPARE WITH OLD KMEANS RESULTS.... 
-#na_dnb = na.omit(dnb_values)
-## cluster based on mean and sd of data 
-#na_dnb_mn_sd = join(mn_dnb, sd_dnb,by='location')  # store mean and sd of dnb values for each location
-#na_dnb = join(na_dnb, na_dnb_mn_sd,by='location')  # store mean and sd of dnb values for each location
-## stratified sample to make sure we have adequate representation for each land use class
-#na_dnb$quantile = cut(na_dnb$mn_dnb,quantile(na_dnb[,'mn_dnb']))
-#set.seed(2)
-##s=strata(na_dnb,'quantile',size=c(250,250,250,250,1), method="srswor") # create strata based on quantiles
-##na_dnb_sample = getdata( na_dnb,s)
-#na_dnb_sample = na_dnb[sample(nrow(na_dnb),10000),]
-#cl1 = kcca(na_dnb_sample[,c('dnb')], k=3, kccaFamily("kmeans"))   # THIS MIGHT BE LETTING INDV OBS HAVE DIFFERENT MEMBERSHIP WITHIN 1 LOCATION
-#image(cl1)
-#na_dnb$kmn = predict(cl1, newdata=na_dnb[,c('dnb'),drop=F])
-## add mean sd and cluster back into full data
-#dnb_values = join(dnb_values, na_dnb, by=c('location','date.time'))
-#table(na_dnb$kmn)
-#table(dnb_values$kmn)
-
-
-## OLD KMEANS METHOD
-#dnb_num =  data.frame(dnb=dnb_values$dnb) # set up a dataframe to store row numbers so can be joined later
-#kmn2 = kmeans(na.omit(dnb_num),3)  
-#kmn2 = data.frame(row = names(kmn2$cluster),kmn2 = kmn2$cluster)
-#dnb_values$row = row.names(dnb_values)
-#dnb_values = join(dnb_values, kmn2,by='row')
-#head(dnb_values)
-#table(dnb_values$kmn2)
-## get summary of old kmeans breaks 
-#tapply(dnb_values$dnb, dnb_values$kmn2, summary)
-
-
-# New KMEANS out of sample
+# New KMEANS out of sample   # NOTE K MEAN CAN BE ON MEAN OR ACTUAL VALUES
 source('/groups/manngroup/India VIIRS/IndiaNightLights/clusters.R')
-dnb_num =  data.frame(dnb=dnb_values$dnb) # set up a dataframe to store row numbers so can be joined later
-kmn2 = kmeans(na.omit(dnb_num),3)
+variable_to_cluster =c('sd_dnb')
+dnb_num =  dnb_values[variable_to_cluster] # set up a dataframe to store row numbers so can be joined later
+kmn2 = kmeans(na.omit(dnb_num),5)
 # calculate cluster membership out of sample for large dataset
 library(foreach)
 library(doParallel)
 registerDoParallel(32)
-iterator_groups = split(1:length(dnb_values$dnb), cut(1:length(dnb_values$dnb),32))   
+iterator_groups = split(1:length(dnb_values[,variable_to_cluster]), cut(1:length(dnb_values[,variable_to_cluster]),32))   
 dnb_values$kmn2 = foreach(group=1:length(iterator_groups), .inorder=T, .combine = c) %dopar% { 
-  x1 = data.frame(dnb_values$dnb[iterator_groups[[group]]])
+  x1 = data.frame(dnb_values[,variable_to_cluster][iterator_groups[[group]]])
   clusters(x1,centers = kmn2[["centers"]])
 }
 stopImplicitCluster()
@@ -337,7 +304,7 @@ combined = rbind.fill(actual,pred, resid)
 
 # sample a portion for graphing
 
-set.seed(11)  # 2 has declining values
+set.seed(11)  # 2 has declining values   11 has a zero light pixel
 actual$quantile = cut(actual$mn_dnb,quantile(actual[,'mn_dnb']))
 s=strata(actual,'quantile',size=c(3,3,3,3,1), method="srswor") # create strata based on quantiles
 combined_sample = getdata(combined,s)  # only get one observation for each location 
@@ -408,7 +375,7 @@ ggplot(combined_loc[combined_loc$pred_actual != 'predicted',], aes(count, dnb,co
 # read in each xls file and convert to long format and write to csv
 # only need to run this the first time... processing unformated files
 # install.packages('readxl')
-#library(readxl)
+library(readxl)
 file_list = list.files('..//TestingData//',pattern='2015.xlsx')
 for(i in 1:length(file_list)){
 	print(i)
@@ -428,11 +395,6 @@ for(i in 1:length(file_list)){
 	#http://www.regexr.com/
 	write.csv(longs,paste('..//TestingData//',gsub('(.[a-z]+$)','\\2',file_list[i]),'.csv',sep=''))
 }
-
-# stack all files together
-#date.time = strptime(dnb_values$date.time,'%Y%j.%H%M',tz='UTM')
-#hour = format(date.time,'%H',usetz=F)
-#minute = format(date.time,'%M',usetz=F)
 
 
 file_list = list.files('..//TestingData//',pattern='2015.csv')
