@@ -5,7 +5,7 @@
 
 # Run the following in bash before starting R
 # module load proj.4/4.8.0
-# module load gdal
+# module load gdal/gcc/1.11
 # module load R/3.0.2
 # module load gcc/4.9.0
 # R
@@ -37,23 +37,32 @@ test_intersection <- function(a,b){
 }
 
 
+# get names right ##############################
+version = 'v5'
+output_list = list.files(getwd(),pattern='job_dnb_') # get some data 
+output_list = output_list[grep(output_list,pattern=version)]
+load(paste(getwd(),'/',output_list[1],sep=''))
+start = 1
+end = 13 
+substr( output[[1]]@data@names,start,end)
+
 
 # Write out day night band data -------------------------------------------
-
-output_list=list.files(getwd(),pattern='job_dnb_')
+output_list = list.files(getwd(),pattern='job_dnb_')
+output_list = output_list[grep(output_list,pattern=version)]
 
 for(i in 1:length(output_list)){
     load(paste(getwd(),'/',output_list[i],sep=''))
     
     if(length(output)==0){warning(paste('error in ',output_list[i]))
         next}
-    lapply(1:length(output),function(x) if(class(output[[x]])=='RasterLayer'& test_intersection(output[[x]],s) ){ 
+    lapply(1:length(output),function(x) if(class(output[[x]])=='RasterLayer' & test_intersection(output[[x]],s) ){ 
         print(x)
         
-        output[[x]]=resample(output[[x]], s, method="bilinear")
+	#output[[x]] = resample(output[[x]], s, method="bilinear") # resample to desired dimensions 
         
         writeRaster(output[[x]], filename=paste(getwd(),'/',
-           substr( output[[x]]@data@names,2,13),'_dnb_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+           substr( output[[x]]@data@names,start,end),'_dnb_',version,'.tif',sep=""),format='GTiff',overwrite=TRUE)})
 
 }    
 remove(output)
@@ -61,7 +70,9 @@ remove(output)
 
 # Write out cloud band data -------------------------------------------
 
-output_list=list.files(getwd(),pattern='job_cld_')
+output_list = list.files(getwd(),pattern='job_cld_')
+output_list = output_list[grep(output_list,pattern=version)]
+
 
 for(i in 1:length(output_list)){
     load(paste(getwd(),'/',output_list[i],sep=''))
@@ -72,10 +83,10 @@ for(i in 1:length(output_list)){
     lapply(1:length(output2),function(x) if(class(output2[[x]])=='RasterLayer' & test_intersection(output2[[x]],s) ){  
 	# avoid empty and non overlapping images
         print(x)
-        output2[[x]]=resample(output2[[x]], s, method="ngb") # limit to new extent and res
+        #output2[[x]]=resample(output2[[x]], s, method="ngb") # limit to new extent and res
 
         writeRaster(output2[[x]], filename=paste(getwd(),'/',
-             substr( output2[[x]]@data@names,2,13),'_cld_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+             substr(output2[[x]]@data@names,start,end),'_cld_',version,'.tif',sep=""),format='GTiff',overwrite=TRUE)})
 
 }
 remove(output2)
@@ -84,7 +95,9 @@ remove(output2)
 
 # Write out moon zenith angle band data -------------------------------------------
 
-output_list=list.files(getwd(),pattern='job_zen_')
+output_list = list.files(getwd(),pattern='job_zen_')
+output_list = output_list[grep(output_list,pattern=version)]
+
 
 for(i in 1:length(output_list)){
     load(paste(getwd(),'/',output_list[i],sep=''))
@@ -95,10 +108,10 @@ for(i in 1:length(output_list)){
     lapply(1:length(output3),function(x) if(class(output3[[x]])=='RasterLayer' & test_intersection(output3[[x]],s) ){  
 	# avoid empty and non overlapping images
         print(x)
-        output3[[x]]=resample(output3[[x]], s, method="ngb") # limit to new extent and res
+        #output3[[x]]=resample(output3[[x]], s, method="ngb") # limit to new extent and res
         
         writeRaster(output3[[x]], filename=paste(getwd(),'/',
-           substr(   output3[[x]]@data@names,2,13),'_zen_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+           substr(   output3[[x]]@data@names,start,end),'_zen_',version,'.tif',sep=""),format='GTiff',overwrite=TRUE)})
 
 }
 remove(output3)
@@ -107,7 +120,8 @@ remove(output3)
 
 # Write out moon zenith angle band data -------------------------------------------
 
-output_list=list.files(getwd(),pattern='job_azt_')
+output_list = list.files(getwd(),pattern='job_azt_')
+output_list = output_list[grep(output_list,pattern=version)]
 
 for(i in 1:length(output_list)){
     load(paste(getwd(),'/',output_list[i],sep=''))
@@ -118,12 +132,15 @@ for(i in 1:length(output_list)){
     lapply(1:length(output4),function(x) if(class(output4[[x]])=='RasterLayer' & test_intersection(output4[[x]],s) ){  
 	# avoid empty and non overlapping images
         print(x)
-        output4[[x]]=resample(output4[[x]], s, method="ngb") # limit to new extent and res
+        #output4[[x]]=resample(output4[[x]], s, method="ngb") # limit to new extent and res
         
         writeRaster(output4[[x]], filename=paste(getwd(),'/',
-            substr(   output4[[x]]@data@names,2,13),'_azt_v3.tif',sep=""),format='GTiff',overwrite=TRUE)})
+            substr(   output4[[x]]@data@names,start,end),'_azt_',version,'.tif',sep=""),format='GTiff',overwrite=TRUE)})
 }
 remove(output4)
+
+
+
 
 
 # # code to change names etc

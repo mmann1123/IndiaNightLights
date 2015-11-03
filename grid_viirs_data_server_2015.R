@@ -8,7 +8,7 @@
 
 # Run the following in bash before starting R
 #module load proj.4/4.8.0
-#module load gdal
+#module load gdal/gcc/1.11
 #module load R/3.0.2
 #module load gcc/4.9.0
 # R
@@ -121,7 +121,7 @@ for(j in 1:length(iterator)){
     
     # read in  cloud band data -------------------------------------------
     
-    output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
+  output2 <- foreach(i = 1:length(d), .inorder=FALSE,.packages =c('rhdf5','raster')) %dopar% {
         print(i)
         fname <- d[i]
         
@@ -140,25 +140,25 @@ for(j in 1:length(iterator)){
         #example =raster(matrix(NA,nrow=dim(lat_cmask)[1],ncol=dim(lat_cmask)[2]),xmn=xmin,xmx=xmax,
     	#ymn=ymin,ymx=ymax,crs=CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
         
-         if(length(lon_cmask)!=length(lat_cmask)| length(lon_cmask) !=length(cmask)){
-    	#special case for non matching data lengths
-    	a=c("this file had different lenghts for lat, lon and cmask")
-    	write.csv(a,paste(getwd(),'//',
+        if(length(lon_cmask)!=length(lat_cmask)| length(lon_cmask) !=length(cmask)){
+    	   #special case for non matching data lengths
+    	   a=c("this file had different lenghts for lat, lon and cmask")
+    	   write.csv(a,paste(getwd(),'//',
     	            name_date_time,'_cld_v2_FAILED_DIF_LENGTHS.csv',sep=""))
-    	return(NA)
+    	   return(NA)
     	}else{
-        data = data.frame(lon=as.numeric(lon_cmask), lat = as.numeric(lat_cmask),cloud=as.numeric(cmask))
-        coordinates(data) =~lon+lat
+           data = data.frame(lon=as.numeric(lon_cmask), lat = as.numeric(lat_cmask),cloud=as.numeric(cmask))
+           coordinates(data) =~lon+lat
         
-	#cloud = rasterize(x=data,y=example,field='cloud',fun='max',background=NA,na.rm=T)
-        #cloud@data@names = name_date_time
-        #cloud
+	   #cloud = rasterize(x=data,y=example,field='cloud',fun='max',background=NA,na.rm=T)
+           #cloud@data@names = name_date_time
+           #cloud
 
              if( test_intersection(data,example) ){
                 cloud = rasterize(x=data,y=example,field='cloud',fun='max',background=NA,na.rm=T)
-                cloud@data@names = name_date_time
 	        # deal with courser resolution
 		cloud = focal(cloud, w=matrix(1,3,3),fun=function(x){max(x,na.rm=T)})
+		cloud@data@names = name_date_time
 		cloud
              }
 
@@ -259,3 +259,6 @@ for(j in 1:length(iterator)){
     save(output4, file=paste(getwd(),'/job_azt_', j,'_',version,'.RData',sep=""))
     remove(output4)
 }
+
+
+# use Write_dnb_out.R to write these saved files to .tif

@@ -18,6 +18,9 @@ library(splines)
 library(flexclust)   # allow for multidimentional clustering with predict function
 library(sampling)
 library(plyr)
+library(e1071)
+library(randomForest)
+library(party)
 
 # this scripts reads in raster files exported from grid_viirs_data (3).R
 
@@ -35,10 +38,10 @@ setwd('/groups/manngroup/India\ VIIRS/2015')
 
 # pull available files
 files = dir(pattern = '.tif')
-cld = files[grep('cld_v4',files)]
-dnb = files[grep('dnb_v4',files)]
-zen = files[grep('zen_v4',files)]
-azt = files[grep('azt_v4',files)]
+cld = files[grep('cld_v5',files)]
+dnb = files[grep('dnb_v5',files)]
+zen = files[grep('zen_v5',files)]
+azt = files[grep('azt_v5',files)]
 
 
 # create raster stacks  & extract data
@@ -49,20 +52,20 @@ azt_stack = stack(azt)
 
 
 # Extract dates
-time_stamp_dnb = gsub(x=names(dnb_stack),pattern = "(.*X)(.*)(.*_dnb_v4)",replacement = "\\2")
+time_stamp_dnb = gsub(x=names(dnb_stack),pattern = "(.*X)(.*)(.*_dnb_v5)",replacement = "\\2")
 time_stamp_dnb = strptime(time_stamp_dnb,"%Y%j.%H%M", tz = 'UTC')
 names(dnb_stack) = format(time_stamp_dnb,"%Y%j.%H%M",usetz=F)
-time_stamp_cld = gsub(x=names(cld_stack),pattern = "(.*X)(.*)(.*_cld_v4)",replacement = "\\2")
+time_stamp_cld = gsub(x=names(cld_stack),pattern = "(.*X)(.*)(.*_cld_v5)",replacement = "\\2")
 time_stamp_cld = strptime(time_stamp_cld,"%Y%j.%H%M", tz = 'UTC')
 names(cld_stack) = format(time_stamp_cld,"%Y%j.%H%M",usetz=F)
-time_stamp_zen = gsub(x=names(zen_stack),pattern = "(.*X)(.*)(.*_zen_v4)",replacement = "\\2")
+time_stamp_zen = gsub(x=names(zen_stack),pattern = "(.*X)(.*)(.*_zen_v5)",replacement = "\\2")
 time_stamp_zen = strptime(time_stamp_zen,"%Y%j.%H%M", tz = 'UTC')
 names(zen_stack) = format(time_stamp_zen,"%Y%j.%H%M",usetz=F)
-time_stamp_azt = gsub(x=names(azt_stack),pattern = "(.*X)(.*)(.*_azt_v4)",replacement = "\\2")
+time_stamp_azt = gsub(x=names(azt_stack),pattern = "(.*X)(.*)(.*_azt_v5)",replacement = "\\2")
 time_stamp_azt = strptime(time_stamp_azt,"%Y%j.%H%M", tz = 'UTC')
 names(azt_stack) = format(time_stamp_azt,"%Y%j.%H%M",usetz=F)
 
-# not all stacks have same dates
+# TEST: not all stacks have same dates
 all.equal(time_stamp_dnb,time_stamp_cld)
 all.equal(time_stamp_dnb,time_stamp_zen)
 all.equal(time_stamp_dnb,time_stamp_azt)
@@ -109,8 +112,8 @@ source('/groups/manngroup/India VIIRS/IndiaNightLights/PolygonFromExtent.R')
 
 # create sample of 10000 set seed for reproducibility
 set.seed(2)
-sampled = spsample(PolygonFromExtent(extent(72, 81.50, 15, 22.5),crs=CRS('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs ')),
-     n=10000,type='random')
+sampled = spsample(PolygonFromExtent(extent(72, 81.50, 15, 22.5),crs=CRS('+proj=longlat +ellps=WGS84 
+	+datum=WGS84 +no_defs ')), n=10000,type='random')
 
 
 # extract data (and surrounding area)
@@ -350,7 +353,7 @@ resid_loc = actual_loc
 resid_loc$pred_actual = 'resid+const'
 resid_loc$count = 1:dim(resid_loc)[1]
 resid_loc = join(resid_loc,mn_dnb,by='location')
-resid_loc$dnb = mean_lm_loc$residuals # +resid_loc$mn_dnb
+resid_loc$dnb = mean_lm_loc$residuals  +resid_loc$mn_dnb
 head(resid_loc)
 
 combined_loc = rbind.fill(actual_loc,pred_loc, resid_loc)
@@ -375,40 +378,40 @@ ggplot(combined_loc[combined_loc$pred_actual != 'predicted',], aes(count, dnb,co
 # read in each xls file and convert to long format and write to csv
 # only need to run this the first time... processing unformated files
 # install.packages('readxl')
-library(readxl)
-file_list = list.files('..//TestingData//',pattern='2015.xlsx')
-for(i in 1:length(file_list)){
-	print(i)
-	a_location = read_excel(paste("..//TestingData//",file_list[i],sep=''), na = "NA")
-	names(a_location) = c('location','date','hour',paste(1:60))	
-	head(a_location)
-
-	if(file_list[i]=='Other 28 ESMI MH Voltage Data 2015.xlsx'){
-		a_location$date = 	# convert file to proper date time 
-		format(strptime(a_location$date,'%m/%d/%Y',tz='Asia/Calcutta'),'%Y-%m-%d',usetz=F)
-		}
-	# put data into long form and sort 
-	longs =  melt(a_location,id=c('location','date','hour') )
-	names(longs) = c('location','date','hour','minute','voltage')
-	longs = longs[with(longs,order(location,date,hour)),]
-	head(longs)
-	#http://www.regexr.com/
-	write.csv(longs,paste('..//TestingData//',gsub('(.[a-z]+$)','\\2',file_list[i]),'.csv',sep=''))
-}
-
-
-file_list = list.files('..//TestingData//',pattern='2015.csv')
-voltage = read.csv(paste('..//TestingData//',file_list[1],sep=''))
-voltage$hour = as.numeric(voltage$hour) + 1
-print(unique(voltage$hour))
-head(voltage)
-for(i in 2:length(file_list)){
-	inner =  read.csv(paste('..//TestingData//',file_list[i],sep=''))
-	print(class(inner$hour)) 
-	inner$hour = as.numeric(inner$hour) + 1
-	print(unique(inner$hour))
-	voltage = rbind.fill(voltage,inner)
-}
+# library(readxl)
+#file_list = list.files('..//TestingData//',pattern='2015.xlsx')
+#for(i in 1:length(file_list)){
+#	print(i)
+#	a_location = read_excel(paste("..//TestingData//",file_list[i],sep=''), na = "NA")
+#	names(a_location) = c('location','date','hour',paste(1:60))	
+#	head(a_location)
+#
+#	if(file_list[i]=='Other 28 ESMI MH Voltage Data 2015.xlsx'){
+#		a_location$date = 	# convert file to proper date time 
+#		format(strptime(a_location$date,'%m/%d/%Y',tz='Asia/Calcutta'),'%Y-%m-%d',usetz=F)
+#		}
+#	# put data into long form and sort 
+#	longs =  melt(a_location,id=c('location','date','hour') )
+#	names(longs) = c('location','date','hour','minute','voltage')
+#	longs = longs[with(longs,order(location,date,hour)),]
+#	head(longs)
+#	#http://www.regexr.com/
+#	write.csv(longs,paste('..//TestingData//',gsub('(.[a-z]+$)','\\2',file_list[i]),'.csv',sep=''))
+#}
+#
+#
+#file_list = list.files('..//TestingData//',pattern='2015.csv')
+#voltage = read.csv(paste('..//TestingData//',file_list[1],sep=''))
+#voltage$hour = as.numeric(voltage$hour) + 1
+#print(unique(voltage$hour))
+#head(voltage)
+#for(i in 2:length(file_list)){
+#	inner =  read.csv(paste('..//TestingData//',file_list[i],sep=''))
+#	print(class(inner$hour)) 
+#	inner$hour = as.numeric(inner$hour) + 1
+#	print(unique(inner$hour))
+#	voltage = rbind.fill(voltage,inner)
+#}
 
 
 # save the output
@@ -465,18 +468,21 @@ for(i in 1:length(look_up$locales)){
 
 
 # create locale dnb and 
-for( i in 1:length(locales)){
+for(i in 1:length(locales)){
 	locale = locales[i]
+	# select a location
 	test_site = resid_loc[resid_loc$location==locale,]
 	test_voltage = voltage[voltage$location ==locale,]
 	if(dim(test_voltage)[1]==0){next}   # avoid missing data
+	# join dnb and voltage data based on name and lowest time difference
 	test_join = join(test_site, test_voltage[ sapply(test_site$date.time2,
                       function(x) which.min(abs(difftime(x, test_voltage$date.time2)))), ])
 	head(test_join,5)
-
+	if(i == 1){test_join_holder = test_join    # store data for later 
+		}else{test_join_holder=rbind.fill(test_join_holder,test_join)}
 	test_join$count = 1:dim(test_join)[1]
 	test_join$lights_out = 'on'
-	test_join$lights_out[test_join$voltage<=131]='off'  #test_join$voltage==0
+	test_join$lights_out[test_join$voltage<=100]='off'  #test_join$voltage==0,131 used by ngo
 	test_join$lights_out[is.na(test_join$voltage)]='No Data'
 	if(length(unique(test_join$lights_out))==3){color_codes=c("#CC00CC","#FF0000","#00CC00")}
         if(length(unique(test_join$lights_out))==2){color_codes=c("#CC00CC","#00CC00")}
@@ -490,11 +496,68 @@ for( i in 1:length(locales)){
 	ggtitle(locale)
 	ggsave(a, file=paste('..//TestingData//plot_',locale,'.png',sep=''), width=6, height=4)
 	remove(test_join) # USE: to avoid mismatch between locations
-print(locale)}
+	print(locale)
+}
 
 
 
+# Train a classifier to find outages ----------------------------------------------
+#save(.,file='..//TestingData//Voltage.RData')
 
+test_join_holder=test_join_holder[!is.na(test_join_holder$dnb)&!is.na(test_join_holder$voltage),]
+test_join_holder$lightsout = test_join_holder$voltage<100
+
+model = randomForest(factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
+	illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6), 
+	data=test_join_holder, ntree=3000,importance=T,do.trace = 100) 
+model$confusion  #91
+importance(model)
+varImpPlot(model)
+
+
+# Tune the classifier ------------------------------------------------------------- 
+
+set.seed(101)
+alpha     = 0.8 # percentage of training set
+inTrain   = sample(1:nrow(test_join_holder), alpha * nrow(test_join_holder))
+train.set = test_join_holder[inTrain,]
+test.set  = test_join_holder[-inTrain,]
+
+form = factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
+        illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)
+
+model = randomForest(form,data=train.set, ntree=3000,importance=T,do.trace = 100)
+model$confusion  
+
+# next function gives a graphical depiction of the marginal effect of a variable on the class probability (classification) or response (regression).
+# partialPlot(model, train.set, dnb, "TRUE")
+# partialPlot(model, train.set, illum, "TRUE")
+# partialPlot(model, train.set, phase, "TRUE")
+
+# histogram of treesize
+hist(treesize(model))
+
+# Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
+rf_ranges = list(ntree=seq(1,1000,200),mtry=7:25)
+
+# Tune the tree, multicore 
+tuned.r = tune(randomForest, train.x = form, data = train.set, validation.x = test.set,
+         tunecontrol = tune.control(sampling = "fix",fix = 9/10), ranges=rf_ranges)
+tuned.r
+
+# Get best parameters
+tuned.r$best.parameters
+
+# Store the best model 
+best.model = tuned.r$best.model
+predictions = predict(best.model, test.set)
+table.random.forest = table(test.set$lightsout, predictions)
+table.random.forest
+
+
+# Calculate error rate
+error.rate <- 1 - sum(diag(as.matrix(table.random.forest))) / sum(table.random.forest)
+error.rate
 
 
 
