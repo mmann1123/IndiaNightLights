@@ -502,14 +502,22 @@ for(i in 1:length(locales)){
 
 
 # Train a classifier to find outages ----------------------------------------------
-#save(.,file='..//TestingData//Voltage.RData')
+#save.image(file='..//TestingData//AllData.RData')
+setwd('/groups/manngroup/India\ VIIRS/2015')
+load('..//TestingData//AllData.RData')
 
 test_join_holder=test_join_holder[!is.na(test_join_holder$dnb)&!is.na(test_join_holder$voltage),]
 test_join_holder$lightsout = test_join_holder$voltage<100
 
+
+
+
+
+
+# run a first classifier
 model = randomForest(factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
 	illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6), 
-	data=test_join_holder, ntree=3000,importance=T,do.trace = 100) 
+	data=test_join_holder, ntree=1000,importance=T,do.trace = 100) 
 model$confusion  #91
 importance(model)
 varImpPlot(model)
@@ -523,11 +531,18 @@ inTrain   = sample(1:nrow(test_join_holder), alpha * nrow(test_join_holder))
 train.set = test_join_holder[inTrain,]
 test.set  = test_join_holder[-inTrain,]
 
+
+# Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
+rf_ranges = list(ntree=seq(1,1000,200),mtry=7:25)
+
+# Tune the tree, multicore 
+tuned.r = tune(randomForest, train.x = form, data = test.set  = test_join_holder[-inTrain,]
+
 form = factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
         illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)
 
 model = randomForest(form,data=train.set, ntree=3000,importance=T,do.trace = 100)
-model$confusion  
+model$confusion
 
 # next function gives a graphical depiction of the marginal effect of a variable on the class probability (classification) or response (regression).
 # partialPlot(model, train.set, dnb, "TRUE")
@@ -537,27 +552,71 @@ model$confusion
 # histogram of treesize
 hist(treesize(model))
 
-# Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
-rf_ranges = list(ntree=seq(1,1000,200),mtry=7:25)
 
-# Tune the tree, multicore 
-tuned.r = tune(randomForest, train.x = form, data = train.set, validation.x = test.set,
+
+# Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
+rf_ranges = list(ntree=seq(1,250,10),mtry=10:30)
+
+# Tune the tree, multicore
+tuned.r = tune(randomForest, train.x = form, data = test_join_holder,
          tunecontrol = tune.control(sampling = "fix",fix = 9/10), ranges=rf_ranges)
 tuned.r
 
+
+# Tune the tree, multicore
+tuned.r2 = tune(randomForest, train.x = form, data = test_join_holder,
+         tunecontrol = tune.control(sampling = "cross",cross = 10), ranges=rf_ranges)
+tuned.r2
+
+# Tune the tree, multicore
+tuned.r3 = tune(randomForest, train.x = form, data = test_join_holder,
+         tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges)
+tuned.r3
+
+
+save(tuned.r,tuned.r2,tuned.r3,file='..//TestingData//tunedTrees.RData')
+load(file='..//TestingData//tunedTrees.RData')
+
+
+
+tune.number = tuned.r3
 # Get best parameters
-tuned.r$best.parameters
+tune.number$best.parameters
 
 # Store the best model 
-best.model = tuned.r$best.model
-predictions = predict(best.model, test.set)
-table.random.forest = table(test.set$lightsout, predictions)
+best.model = tune.number$best.model
+predictions = predict(best.model, train.set)
+table.random.forest = table(train.set$lightsout, predictions)
 table.random.forest
 
 
 # Calculate error rate
 error.rate <- 1 - sum(diag(as.matrix(table.random.forest))) / sum(table.random.forest)
 error.rate
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
