@@ -577,8 +577,6 @@ tuned.r3
 save(tuned.r,tuned.r2,tuned.r3,file='..//TestingData//tunedTrees.RData')
 load(file='..//TestingData//tunedTrees.RData')
 
-
-
 tune.number = tuned.r3
 # Get best parameters
 tune.number$best.parameters
@@ -589,10 +587,75 @@ predictions = predict(best.model, train.set)
 table.random.forest = table(train.set$lightsout, predictions)
 table.random.forest
 
+# next function gives a graphical depiction of the marginal effect of a variable on the class probability (classification) or response (reg$
+ partialPlot(best.model, train.set, dnb, "TRUE")
+ partialPlot(model, train.set, illum, "TRUE")
+ partialPlot(model, train.set, phase, "TRUE")
 
 # Calculate error rate
 error.rate <- 1 - sum(diag(as.matrix(table.random.forest))) / sum(table.random.forest)
 error.rate
+
+
+
+
+
+# PREDICT OUT OF SAMPLE ---------------------------------------------------------------
+
+remove(list=ls())
+setwd('/groups/manngroup/India\ VIIRS/2015')
+
+# load raster stacks
+load('dnb_stack_wo_cld.RData')   
+load('zen_stack_wo_cld.RData')
+load('azt_stack_wo_cld.RData')
+dnb_date_time = substr(names(dnb_stack),2,20)
+
+# create sd_dnb for each dnb time series
+sd_dnb_layer = calc(dnb_stack,function(x){sd(x,na.rm=T)} )
+
+# read in moon phase (year doy time moon_illum_frac moon_phase_angle)
+phase = read.csv('moon_info.csv')
+names(phase)=c('year','doy','time', 'illum', 'phase')
+phase$date_time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
+
+# load the tuned trees
+load(file='..//TestingData//tunedTrees.RData')
+best.model = tuned.r2$best.model
+
+# iterate through each date_time collect dnb, add sd_dnb illum phase
+for (date_time in dnb_date_time){
+	print(date_time)
+	hold_stack_dnb = dnb_stack[[which(dnb_date_time %in% date_time)]]  # find the dnb that matches date_time
+	hold_stack_zen = zen_stack[[which(dnb_date_time %in% date_time)]]  
+        hold_stack_azt = azt_stack[[which(dnb_date_time %in% date_time)]]  
+	# store illumination
+	# avoid missing data
+	if(length(phase[phase$date_time == date_time,'illum'])==0){next}
+	hold_stack_illum = hold_stack_azt
+	hold_stack_illum[] = phase[phase$date_time == date_time,'illum']
+	# store phase
+        hold_stack_phase = hold_stack_azt
+        hold_stack_phase[] = phase[phase$date_time == date_time,'phase']
+        # stack all data with appropriate names
+	data_stack = stack(hold_stack_dnb,hold_stack_zen,hold_stack_azt,sd_dnb_layer,hold_stack_illum,hold_stack_phase)
+	names(data_stack) = c('dnb','zen','azt','sd_dnb','illum','phase')
+	# predict to surface
+	prediction = raster::predict(data_stack,best.model)
+	writeRaster(prediction,paste('predictions//Prediction_',date_time,'.tif',sep=''),overwrite=T)
+	}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
