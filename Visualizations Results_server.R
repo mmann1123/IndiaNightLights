@@ -683,6 +683,8 @@ for (i in 1:dim(prediction_stack)[3]){
 }
 
 
+# plot outages (2 = outage, 1 = normal)
+plot(prediction_stack[[11]])   # good example of outage in image #11
 
 
 
