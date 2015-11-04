@@ -600,6 +600,7 @@ error.rate
 
 
 
+
 # PREDICT OUT OF SAMPLE ---------------------------------------------------------------
 
 remove(list=ls())
@@ -624,6 +625,7 @@ load(file='..//TestingData//tunedTrees.RData')
 best.model = tuned.r2$best.model
 
 # iterate through each date_time collect dnb, add sd_dnb illum phase
+prediction_stack = stack()
 for (date_time in dnb_date_time){
 	print(date_time)
 	hold_stack_dnb = dnb_stack[[which(dnb_date_time %in% date_time)]]  # find the dnb that matches date_time
@@ -642,15 +644,43 @@ for (date_time in dnb_date_time){
 	names(data_stack) = c('dnb','zen','azt','sd_dnb','illum','phase')
 	# predict to surface
 	prediction = raster::predict(data_stack,best.model)
-	writeRaster(prediction,paste('predictions//Prediction_',date_time,'.tif',sep=''),overwrite=T)
+        writeRaster(prediction,paste('predictions//Prediction_',date_time,'.tif',sep=''),overwrite=T)
+	# store predictions
+	prediction_stack = stack(prediction_stack, prediction)
+	names(prediction_stack)[dim(prediction_stack)[3]] = paste(date_time)
 	}
 
+save(prediction_stack, file='prediction_stack_w_cld.RData')
 
 
+foreach(i=1:dim(prediction_stack)[3]) %do% { prediction_stack[[i]][cld_stack[[i]]>0]=NA}
 
 
+setwd('/groups/manngroup/India\ VIIRS/2015')
+
+# create raster stacks  & extract data
+files = dir(pattern = '.tif')
+cld = files[grep('cld_v5',files)]
+cld_stack = stack(cld)
+# find cloud masks that match prediction dates
+time_stamp_cld = gsub(x=names(cld_stack),pattern = "(.*X)(.*)(.*_cld_v5)",replacement = "\\2")
+time_stamp_prd = gsub(x=names(prediction_stack),pattern = "(.*X)(.*)",replacement = "\\2")
+common_cld = (time_stamp_cld %in% intersect(time_stamp_cld,time_stamp_prd))
+cld_stack = cld_stack[[ (1:length(common_cld))[common_cld] ]]
 
 
+# Mask prediction stack
+library(foreach)
+library(doParallel)
+registerDoParallel(32)
+foreach(i=1:dim(prediction_stack)[3]) %do% { prediction_stack[[i]][cld_stack[[i]]>0]=NA}
+save(prediction_stack, file='prediction_stack_wo_cld.RData')
+
+#write out prediction mask wo clouds
+for (i in 1:dim(prediction_stack)[3]){
+   date_time = substr(names(prediction_stack)[i],2,15)
+   writeRaster(prediction_stack[[i]],paste('predictions//Prediction_wo_cld',date_time,'.tif',sep=''),overwrite=T)
+}
 
 
 
@@ -793,4 +823,5 @@ endCluster()
 #na_dnb_wide_sample = dnb_values[sample(nrow(dnb_values),5000),]
 #wide_kmn_class = kcca(na_dnb_wide_sample, k=3, kccaFamily("kmeans"))
 #na_dnb$kmn = predict(cl1, newdata=na_dnb[,c('dnb'),drop=F])
+
 
