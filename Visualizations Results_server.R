@@ -689,6 +689,13 @@ plot(prediction_stack[[11]])   # good example of outage in image #11
 
 
 
+# IDEA: SHOW CLASSIFIER CLOUD MASK, AS WELL AS EXAMPLES WITH NO LIGHTS AT ALL
+# MINIMUM MAPPING UNIT
+
+
+
+
+
 
 
 
