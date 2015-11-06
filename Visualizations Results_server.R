@@ -1,3 +1,6 @@
+# this scripts reads in raster files exported from grid_viirs_data (3).R
+# it 1) reads in a dnb, zenith angle, moon phase etc data, 2) extracts this for all training sites (with voltage meters)
+# 3) uses this info to train a ML model to predict outages 
 
 # Run the following in bash before starting R
 # module load proj.4/4.8.0
@@ -21,13 +24,11 @@ library(plyr)
 library(e1071)
 library(randomForest)
 library(party)
-
-# this scripts reads in raster files exported from grid_viirs_data (3).R
+library(foreign)
 
 
 
 # Time Series Plots for locations of interest -----------------------------
-
 
 
 # Lunar adjustments ------------------------------------------------------
@@ -94,8 +95,7 @@ save(azt_stack,file = 'azt_stack_wo_cld.RData')
 
 
 
-# Demeaned regression on 1000 point sample -------------------------------------------
-
+# Extract dnb values for all training data locations  -------------------------------------------
 
 # load data
 rm(list=ls())
@@ -106,38 +106,21 @@ load('zen_stack_wo_cld.RData')
 load('azt_stack_wo_cld.RData')
 
 
-# create a plygon to create samples within
-source('/groups/manngroup/India VIIRS/IndiaNightLights/PolygonFromExtent.R')
-
-
-# create sample of 10000 set seed for reproducibility
-set.seed(2)
-sampled = spsample(PolygonFromExtent(extent(72, 81.50, 15, 22.5),crs=CRS('+proj=longlat +ellps=WGS84 
-	+datum=WGS84 +no_defs ')), n=10000,type='random')
-
-
-# extract data (and surrounding area)
-dnb_values = extract(dnb_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
-zen_values = extract(zen_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)
-azt_values = extract(azt_stack,sampled,fun= function(x) mean(x,na.rm=T), df=T)
-time_stamp_extract = gsub(x=colnames(dnb_values),pattern = "(.*X)(.*)(.*)",replacement = "\\2")
-
-# change time stamps 
-names(dnb_values) = time_stamp_extract
-names(zen_values) = time_stamp_extract
-names(azt_values) = time_stamp_extract
-
-
 # extract local testing data 
 # define locations of interest
-locations = read.csv('MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
+locations = read.csv('/groups/manngroup/India VIIRS/TestingData/MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
 locations2 = read.csv('/groups/manngroup/India VIIRS/TestingData/Other 28 ESMI MH Locations Coordinates.csv')
 names(locations2) = c('STATE','DISTRICT.CITY','LOCATION','TYPE','LAT','LON','Ag.Rural')
 locations2 = locations2[,!names(locations2) %in% 'TYPE']
 jumba.df = data.frame(STATE='MH', DISTRICT.CITY="NA", LOCATION='Jumda',LAT=20.010094,LON=77.044271, Ag.Rural=T)
+locations3 = read.dbf('/groups/manngroup/India VIIRS/TestingData/Emptyspaces.dbf')
+names(locations3)=c('ID','LON','LAT')
+locations3$STATE='MH'
+locations3$LOCATION=paste('uninhabited',1:length(locations3$STATE),sep='')
 locations=rbind.fill(locations,jumba.df)
 locations=rbind.fill(locations,locations2)
-head(locations)
+locations=rbind.fill(locations,locations3)
+head(locations,50)
 
 
 # convert to spatial objects and extract values
@@ -153,8 +136,6 @@ time_stamp_extract_loc = gsub(x=colnames(dnb_values_loc),pattern = "(.*X)(.*)(.*
 names(dnb_values_loc) = time_stamp_extract_loc
 names(zen_values_loc) = time_stamp_extract_loc
 names(azt_values_loc) = time_stamp_extract_loc
-
-
 
 
 # put into long form
@@ -180,9 +161,6 @@ put_in_long_loc <- function(wide_data,abreviation){
 }
 
 
-dnb_values=put_in_long2(dnb_values,'dnb')
-zen_values= put_in_long2(zen_values,'zen')
-azt_values=put_in_long2(azt_values,'azt')
 dnb_values_loc=put_in_long_loc(dnb_values_loc,'dnb')
 zen_values_loc= put_in_long_loc(zen_values_loc,'zen')
 azt_values_loc=put_in_long_loc(azt_values_loc,'azt')
@@ -197,15 +175,11 @@ phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,se
 
 
 # join in moon and dnb
-
-dnb_values = join(dnb_values,zen_values) # add moon characteristics to dnb values
-dnb_values = join(dnb_values,azt_values)
-dnb_values = join(dnb_values, phase)
 dnb_values_loc = join(dnb_values_loc,zen_values_loc) # add moon characteristics to dnb values
 dnb_values_loc = join(dnb_values_loc,azt_values_loc)
 dnb_values_loc = join(dnb_values_loc,phase)
-head(dnb_values[20000:25000,],50)
-head(dnb_values_loc[50:60,])
+#head(dnb_values[20000:25000,],50)
+dnb_values_loc[550:650,]
 
 
 
@@ -215,16 +189,17 @@ head(dnb_values_loc[50:60,])
 # save output to load quickly
 setwd('/groups/manngroup/India\ VIIRS/2015')
 
-#save(dnb_values,file='dnb_values_w_moon.RData')
-#save(dnb_values_loc,file='dnb_values_w_moon_loc.RData')
-load('dnb_values_w_moon.RData')
-load('dnb_values_w_moon_loc.RData')
+##save(dnb_values,file='dnb_values_w_moon.RData')
+#save(dnb_values_loc,file='dnb_values_w_moon_loc2.RData')
+#load('dnb_values_w_moon2.RData')
+load('dnb_values_w_moon_loc2.RData')
 
 
 # merge training and testing data
-dnb_values$type = 'training'
+#dnb_values$type = 'training'
 dnb_values_loc$type = 'testing'
-dnb_values = rbind.fill(dnb_values,dnb_values_loc)
+#dnb_values = rbind.fill(dnb_values,dnb_values_loc)
+dnb_values  = dnb_values_loc
 head(dnb_values)
 
 
@@ -254,164 +229,51 @@ dnb_values$kmn2 = foreach(group=1:length(iterator_groups), .inorder=T, .combine 
 stopImplicitCluster()
 
 
-#########
-# compare actual and resid plus constant for demeaned regression using kmean cluster for slope & intercept dummies
-
+######### 
 # demean the y variable to simulate FE
 dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
-
-#mean_lm = lm(demean_dnb~0+factor(kmn)*(ns(zen,df=3)+ns(azt,df=3)+ns(phase,df=3)+zen*azt+
-#      ns(zen*phase,3)+ns(azt*phase,3)),data=dnb_values) # omit intercept
-#mean_lm = lm(demean_dnb~0+factor(kmn2)*(ns(zen*azt,2)+
-#      ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
-
-#mean_lm = lm(demean_dnb~0+I(dnb<1.099e-8)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)
-#	+I(dnb<4e-6)*(ns(zen*azt,2)+ns(zen*phase,2)+ns(azt*phase,2)),data=na.omit(dnb_values)) # omit intercept
-
-#mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+
-#      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
-#
-#mean_lm = lm(demean_dnb~0+I(mn_dnb<1.099e-8)*(ns(zen*azt,3)+   
-#      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,3)+ns(illum,3))+I(mn_dnb<1e-7)*(ns(zen*azt,3)+
-#      ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,3)+ns(illum,3)),data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
-
-########### REGRESSIONS FOR V4 DATA ##################
-mean_lm = lm(demean_dnb~0+I(factor(kmn2))*ns(zen*azt,3)+ns(zen*phase,3)+ns(azt*phase,3)+ns(phase,4),
-           data=na.omit(dnb_values[dnb_values$type=='training',])) # omit intercept
-
-summary(mean_lm)
-
-
-# compare actual and predicted
-remove(actual, pred, resid)
-actual = na.omit(dnb_values[dnb_values$type=='training',])
-actual$count = 1:dim(actual)[1]
-actual$pred_actual = 'actual'
-
-pred = actual
-pred$pred_actual = 'predicted'
-pred$count = 1:dim(pred)[1]
-pred = join(pred,mn_dnb,by='location')
-pred$dnb = mean_lm$fitted.values+pred$mn_dnb   # add back the mean from demeaning process
-head(pred)
-
-resid = actual
-resid$pred_actual = 'resid+const'
-resid$count = 1:dim(resid)[1]
-resid = join(resid,mn_dnb,by='location')
-resid$dnb = mean_lm$residuals  +resid$mn_dnb
-head(resid)
-
-combined = rbind.fill(actual,pred, resid)
-
-
-# sample a portion for graphing
-
-set.seed(11)  # 2 has declining values   11 has a zero light pixel
-actual$quantile = cut(actual$mn_dnb,quantile(actual[,'mn_dnb']))
-s=strata(actual,'quantile',size=c(3,3,3,3,1), method="srswor") # create strata based on quantiles
-combined_sample = getdata(combined,s)  # only get one observation for each location 
-combined_sample = combined[combined$location %in% combined_sample$location,]   # limit to desired locations keeping all observations
-
-
-# plot actual vs predicted
-
-ggplot(combined_sample, aes(count, dnb,colour=pred_actual))+geom_point()+
-  facet_wrap(~ location, scales="free_y")
-
-ggplot(combined_sample[combined_sample$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual,alpha=0.2))+geom_point()+
-  facet_wrap(~ location, scales="free_y")
-
-ggplot(combined_sample[combined_sample$pred_actual != 'predicted',], aes(count, dnb,colour=pred_actual))+geom_point()+
-  facet_wrap(~ location, scales='free_y')
-
-ggplot(combined_sample[combined_sample$pred_actual == 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
-  facet_wrap(~ location, scales="free_y")
-
-
-
-# predict to testing locations
-dnb_values_loc = dnb_values[dnb_values$type=='testing',]
-mean_lm_loc = predict(mean_lm,dnb_values_loc)
-summary(mean_lm_loc)
-mean_lm_loc=data.frame(fitted.values=mean_lm_loc)
-mean_lm_loc$residuals = dnb_values_loc$dnb - mean_lm_loc$fitted.values
-
-# compare actual and predicted
-actual_loc = dnb_values_loc
-actual_loc$count = 1:dim(actual_loc)[1]
-actual_loc$pred_actual = 'actual'
-
-pred_loc = actual_loc
-pred_loc$pred_actual = 'predicted'
-pred_loc$count = 1:dim(pred_loc)[1]
-pred_loc = join(pred_loc,mn_dnb,by='location')
-pred_loc$dnb = mean_lm_loc$fitted.values+pred_loc$mn_dnb   # add back the mean from demeaning process
-head(pred_loc)
-
-resid_loc = actual_loc
-resid_loc$pred_actual = 'resid+const'
-resid_loc$count = 1:dim(resid_loc)[1]
-resid_loc = join(resid_loc,mn_dnb,by='location')
-resid_loc$dnb = mean_lm_loc$residuals  +resid_loc$mn_dnb
-head(resid_loc)
-
-combined_loc = rbind.fill(actual_loc,pred_loc, resid_loc)
-
-
-ggplot(combined_loc[combined_loc$pred_actual != 'resid+const',], aes(count, dnb,colour=pred_actual,alpha=0.2))+geom_point()+
-  facet_wrap(~ location, scales="free_y")
-
-ggplot(combined_loc[combined_loc$pred_actual == 'resid+const',], aes(count, dnb,colour=pred_actual))+geom_point()+
-  facet_wrap(~ location, scales="free_y")
-
-ggplot(combined_loc[combined_loc$pred_actual != 'predicted',], aes(count, dnb,colour=pred_actual))+geom_point()+
-  facet_wrap(~ location, scales="free_y")
-
-
-
-
-
+    
 
 # Compare to actual outage data  ----------------------------------------------------------
 
 # read in each xls file and convert to long format and write to csv
 # only need to run this the first time... processing unformated files
 # install.packages('readxl')
-# library(readxl)
-#file_list = list.files('..//TestingData//',pattern='2015.xlsx')
-#for(i in 1:length(file_list)){
-#	print(i)
-#	a_location = read_excel(paste("..//TestingData//",file_list[i],sep=''), na = "NA")
-#	names(a_location) = c('location','date','hour',paste(1:60))	
-#	head(a_location)
-#
-#	if(file_list[i]=='Other 28 ESMI MH Voltage Data 2015.xlsx'){
-#		a_location$date = 	# convert file to proper date time 
-#		format(strptime(a_location$date,'%m/%d/%Y',tz='Asia/Calcutta'),'%Y-%m-%d',usetz=F)
-#		}
-#	# put data into long form and sort 
-#	longs =  melt(a_location,id=c('location','date','hour') )
-#	names(longs) = c('location','date','hour','minute','voltage')
-#	longs = longs[with(longs,order(location,date,hour)),]
-#	head(longs)
-#	#http://www.regexr.com/
-#	write.csv(longs,paste('..//TestingData//',gsub('(.[a-z]+$)','\\2',file_list[i]),'.csv',sep=''))
-#}
-#
-#
-#file_list = list.files('..//TestingData//',pattern='2015.csv')
-#voltage = read.csv(paste('..//TestingData//',file_list[1],sep=''))
-#voltage$hour = as.numeric(voltage$hour) + 1
-#print(unique(voltage$hour))
-#head(voltage)
-#for(i in 2:length(file_list)){
-#	inner =  read.csv(paste('..//TestingData//',file_list[i],sep=''))
-#	print(class(inner$hour)) 
-#	inner$hour = as.numeric(inner$hour) + 1
-#	print(unique(inner$hour))
-#	voltage = rbind.fill(voltage,inner)
-#}
+library(readxl)
+file_list = list.files('..//TestingData//',pattern='2015.xlsx')
+for(i in 1:length(file_list)){
+	print(i)
+	# read in hourly voltage data
+	a_location = read_excel(paste("..//TestingData//",file_list[i],sep=''), na = "NA")
+	names(a_location) = c('location','date','hour',paste(1:60))	
+	head(a_location)
+	
+	if(file_list[i]=='Other 28 ESMI MH Voltage Data 2015.xlsx'){
+		a_location$date = 	# convert file to proper date time 
+		format(strptime(a_location$date,'%m/%d/%Y',tz='Asia/Calcutta'),'%Y-%m-%d',usetz=F)
+		}
+	# put data into long form and sort 
+	longs =  melt(a_location,id=c('location','date','hour') )
+	names(longs) = c('location','date','hour','minute','voltage')
+	longs = longs[with(longs,order(location,date,hour)),]
+	head(longs)
+	#http://www.regexr.com/
+	write.csv(longs,paste('..//TestingData//',gsub('(.[a-z]+$)','\\2',file_list[i]),'.csv',sep=''))
+}
+
+# Combine all voltage data into one file
+file_list = list.files('..//TestingData//',pattern='2015.csv')
+voltage = read.csv(paste('..//TestingData//',file_list[1],sep=''))
+voltage$hour = as.numeric(voltage$hour) + 1
+print(unique(voltage$hour))
+head(voltage)
+for(i in 2:length(file_list)){
+	inner =  read.csv(paste('..//TestingData//',file_list[i],sep=''))
+	print(class(inner$hour)) 
+	inner$hour = as.numeric(inner$hour) + 1
+	print(unique(inner$hour))
+	voltage = rbind.fill(voltage,inner)
+}
 
 
 # save the output
@@ -420,7 +282,8 @@ setwd('/groups/manngroup/India\ VIIRS/2015')
 load('..//TestingData//Voltage.RData')
 
 
-# deal with date time
+# deal with date time 
+# assign time stamps for voltage to Calcutta
 #OlsonNames() # full list of time zones (only works on unix?)
 voltage$date.hour.minute = paste(voltage$date,sprintf('%02d',voltage$hour), sprintf('%02d',voltage$minute),sep='.')
 voltage$date.hour.minute = as.character(strptime(voltage$date.hour.minute, '%Y-%m-%d.%H.%M'))
@@ -432,14 +295,16 @@ voltage$location = as.character(voltage$location)
 head(voltage$date.hour.minute)
 
 
-#same for all locations 
-resid_loc$date.time2 = strptime(resid_loc$date.time,'%Y%j.%H%M')
-resid_loc$date.time2 = as.POSIXct(resid_loc$date.time2, tz="UTC")
-head(resid_loc$date.time2)
+## assign UTC zone for DNB images
+dnb_values$date.time2 = strptime(dnb_values$date.time,'%Y%j.%H%M')
+dnb_values$date.time2 = as.POSIXct(dnb_values$date.time2, tz="UTC")
+head(dnb_values$date.time2)
 
 
+###################################################################
 # match to closest time in local data 
-locales = unique(resid_loc$location)
+# store location names for dnb and voltage data
+locales = unique(dnb_values$location)
 locales_v = unique(voltage$location)
 
 
@@ -463,25 +328,34 @@ for(i in 1:length(look_up$locales)){
 	voltage$location[voltage$location == look_up$locales_v[i] ] = look_up$locales[i]
 }
 # double check that it worked
- sort(unique(resid_loc$location))
+ sort(unique(dnb_values$location))
  sort(unique(voltage$location))
 
 
 # create locale dnb and 
 for(i in 1:length(locales)){
 	locale = locales[i]
-	# select a location
-	test_site = resid_loc[resid_loc$location==locale,]
+	# select a location and grab dnb and voltage data
+	#test_site = resid_loc[resid_loc$location==locale,]
+	test_site = dnb_values[dnb_values$location==locale,]
 	test_voltage = voltage[voltage$location ==locale,]
-	if(dim(test_voltage)[1]==0){next}   # avoid missing data
+	test_voltage = test_voltage[,c('date.time2','voltage')]
+	# if locations are missing
+	if( (dim(test_site)[1]==0 | dim(test_voltage)[1]==0) & !grepl('uninhabit',locale)   ){next}   # avoid missing data but not uninhabited  not finding voltage data for jumba
+        # if locations are missing & the area is uninhabited
+	# create an empty dataframe with dates that match dnb and fill voltage with 0s 
+	if(dim(test_voltage)[1]==0 & grepl("uninhabit",locale) ){
+		test_voltage = data.frame(date.time2=as.POSIXct(test_site$date.time2), voltage=0)
+		test_voltage$date.time2 = as.POSIXct(test_site$date.time2, tz="UTC") # tz doesn't get assigned without this  	
+		}   
 	# join dnb and voltage data based on name and lowest time difference
 	test_join = join(test_site, test_voltage[ sapply(test_site$date.time2,
                       function(x) which.min(abs(difftime(x, test_voltage$date.time2)))), ])
 	head(test_join,5)
 	if(i == 1){test_join_holder = test_join    # store data for later 
-		}else{test_join_holder=rbind.fill(test_join_holder,test_join)}
-	test_join$count = 1:dim(test_join)[1]
-	test_join$lights_out = 'on'
+		}else{test_join_holder=rbind.fill(test_join_holder,test_join)}  # store data for use later
+	test_join$count = 1:dim(test_join)[1]   # add an index for plotting
+	test_join$lights_out = 'on'  # set what defines an outage 
 	test_join$lights_out[test_join$voltage<=100]='off'  #test_join$voltage==0,131 used by ngo
 	test_join$lights_out[is.na(test_join$voltage)]='No Data'
 	if(length(unique(test_join$lights_out))==3){color_codes=c("#CC00CC","#FF0000","#00CC00")}
@@ -499,24 +373,27 @@ for(i in 1:length(locales)){
 	print(locale)
 }
 
+# save an image of all the data
+#save.image(file='..//TestingData//AllData.RData')
 
 
 # Train a classifier to find outages ----------------------------------------------
-#save.image(file='..//TestingData//AllData.RData')
 setwd('/groups/manngroup/India\ VIIRS/2015')
 load('..//TestingData//AllData.RData')
 
+# set up data for classifier (define what an outage is)
+# read in joined dnb and voltage data where not missing
 test_join_holder=test_join_holder[!is.na(test_join_holder$dnb)&!is.na(test_join_holder$voltage),]
+# define what an outage is
+hist(test_join_holder$voltage)
 test_join_holder$lightsout = test_join_holder$voltage<100
-
-
-
 
 
 
 # run a first classifier
 model = randomForest(factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
-	illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6), 
+	illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)+mn_dnb+I(mn_dnb^2)+
+	I(mn_dnb^3)+I(mn_dnb^3)+I(dnb-mn_dnb), 
 	data=test_join_holder, ntree=1000,importance=T,do.trace = 100) 
 model$confusion  #91
 importance(model)
@@ -525,37 +402,20 @@ varImpPlot(model)
 
 # Tune the classifier ------------------------------------------------------------- 
 
-set.seed(101)
-alpha     = 0.8 # percentage of training set
-inTrain   = sample(1:nrow(test_join_holder), alpha * nrow(test_join_holder))
-train.set = test_join_holder[inTrain,]
-test.set  = test_join_holder[-inTrain,]
-
-
-# Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
-rf_ranges = list(ntree=seq(1,1000,200),mtry=7:25)
-
-# Tune the tree, multicore 
-tuned.r = tune(randomForest, train.x = form, data = test.set  = test_join_holder[-inTrain,]
-
-form = factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
-        illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)
-
-model = randomForest(form,data=train.set, ntree=3000,importance=T,do.trace = 100)
-model$confusion
-
-# next function gives a graphical depiction of the marginal effect of a variable on the class probability (classification) or response (regression).
-# partialPlot(model, train.set, dnb, "TRUE")
-# partialPlot(model, train.set, illum, "TRUE")
-# partialPlot(model, train.set, phase, "TRUE")
-
-# histogram of treesize
-hist(treesize(model))
-
+#set.seed(101)
+#alpha     = 0.8 # percentage of training set
+#inTrain   = sample(1:nrow(test_join_holder), alpha * nrow(test_join_holder))
+#train.set = test_join_holder[inTrain,]
+#test.set  = test_join_holder[-inTrain,]
 
 
 # Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
 rf_ranges = list(ntree=seq(1,250,10),mtry=10:30)
+
+form = factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
+        illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)+mn_dnb+I(mn_dnb^2)+
+        I(mn_dnb^3)+I(mn_dnb^3)+I(dnb-mn_dnb)
+
 
 # Tune the tree, multicore
 tuned.r = tune(randomForest, train.x = form, data = test_join_holder,
