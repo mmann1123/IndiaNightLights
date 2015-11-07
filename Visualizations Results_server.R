@@ -1,3 +1,4 @@
+
 # this scripts reads in raster files exported from grid_viirs_data (3).R
 # it 1) reads in a dnb, zenith angle, moon phase etc data, 2) extracts this for all training sites (with voltage meters)
 # 3) uses this info to train a ML model to predict outages 
@@ -86,11 +87,11 @@ registerDoParallel(32)
 
 
 # remove cloud cells multicore  returns NA but runs fast!
-foreach(i=1:dim(dnb_stack)[3]) %do% { dnb_stack[[i]][cld_stack[[i]]>0]=NA}
+foreach(i=1:dim(dnb_stack)[3]) %dopar% { dnb_stack[[i]][cld_stack[[i]]>0]=NA}
 save(dnb_stack,file = 'dnb_stack_wo_cld.RData')
-foreach(i=1:dim(zen_stack)[3]) %do% { zen_stack[[i]][cld_stack[[i]]>0]=NA}
+foreach(i=1:dim(zen_stack)[3]) %dopar% { zen_stack[[i]][cld_stack[[i]]>0]=NA}
 save(zen_stack,file = 'zen_stack_wo_cld.RData')
-foreach(i=1:dim(azt_stack)[3]) %do% { azt_stack[[i]][cld_stack[[i]]>0]=NA}
+foreach(i=1:dim(azt_stack)[3]) %dopar% { azt_stack[[i]][cld_stack[[i]]>0]=NA}
 save(azt_stack,file = 'azt_stack_wo_cld.RData')
 
 
@@ -183,6 +184,8 @@ dnb_values_loc[550:650,]
 
 
 
+
+
 # LOAD DNB_VALUES --------------------------------------------------------------
 
 
@@ -232,6 +235,8 @@ stopImplicitCluster()
 ######### 
 # demean the y variable to simulate FE
 dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
+
+
     
 
 # Compare to actual outage data  ----------------------------------------------------------
@@ -373,8 +378,13 @@ for(i in 1:length(locales)){
 	print(locale)
 }
 
+
+
 # save an image of all the data
 #save.image(file='..//TestingData//AllData.RData')
+
+
+
 
 
 # Train a classifier to find outages ----------------------------------------------
@@ -412,8 +422,12 @@ varImpPlot(model)
 # Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
 rf_ranges = list(ntree=seq(1,250,10),mtry=10:30)
 
+library(doParallel)
+cl <- makeCluster(detectCores()) 
+registerDoParallel(cl)
+
 form = factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
-        illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)+mn_dnb+I(mn_dnb^2)+
+	 illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)+mn_dnb+I(mn_dnb^2)+
         I(mn_dnb^3)+I(mn_dnb^3)+I(dnb-mn_dnb)
 
 
@@ -421,39 +435,48 @@ form = factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(il
 tuned.r = tune(randomForest, train.x = form, data = test_join_holder,
          tunecontrol = tune.control(sampling = "fix",fix = 9/10), ranges=rf_ranges)
 tuned.r
+save(tuned.r,file='..//TestingData//tunedTrees1.RData')
 
 
 # Tune the tree, multicore
 tuned.r2 = tune(randomForest, train.x = form, data = test_join_holder,
          tunecontrol = tune.control(sampling = "cross",cross = 10), ranges=rf_ranges)
 tuned.r2
+save(tuned.r2,file='..//TestingData//tunedTrees2.RData')
+
 
 # Tune the tree, multicore
 tuned.r3 = tune(randomForest, train.x = form, data = test_join_holder,
          tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges)
 tuned.r3
-
+save(tuned.r,file='..//TestingData//tunedTrees3.RData')
 
 save(tuned.r,tuned.r2,tuned.r3,file='..//TestingData//tunedTrees.RData')
 load(file='..//TestingData//tunedTrees.RData')
 
-tune.number = tuned.r3
+
+
+
+# read in stored regression trees look at performance 
+tune.number = tuned.r2
 # Get best parameters
 tune.number$best.parameters
 
 # Store the best model 
 best.model = tune.number$best.model
-predictions = predict(best.model, train.set)
-table.random.forest = table(train.set$lightsout, predictions)
+predictions = predict(best.model, test_join_holder)
+table.random.forest = table(test_join_holder$lightsout, predictions)
 table.random.forest
 
 # next function gives a graphical depiction of the marginal effect of a variable on the class probability (classification) or response (reg$
- partialPlot(best.model, train.set, dnb, "TRUE")
- partialPlot(model, train.set, illum, "TRUE")
- partialPlot(model, train.set, phase, "TRUE")
+ partialPlot(best.model, test_join_holder, dnb, "TRUE")
+ partialPlot(best.model, test_join_holder, illum, "TRUE")
+ partialPlot(best.model, test_join_holder, phase, "TRUE")
+ partialPlot(best.model, test_join_holder, mn_dnb, "TRUE")
+
 
 # Calculate error rate
-error.rate <- 1 - sum(diag(as.matrix(table.random.forest))) / sum(table.random.forest)
+error.rate = 1 - sum(diag(as.matrix(table.random.forest))) / sum(table.random.forest)
 error.rate
 
 
@@ -463,7 +486,8 @@ error.rate
 
 # PREDICT OUT OF SAMPLE ---------------------------------------------------------------
 
-remove(list=ls())
+
+#remove(list=ls())
 setwd('/groups/manngroup/India\ VIIRS/2015')
 
 # load raster stacks
@@ -472,8 +496,9 @@ load('zen_stack_wo_cld.RData')
 load('azt_stack_wo_cld.RData')
 dnb_date_time = substr(names(dnb_stack),2,20)
 
-# create sd_dnb for each dnb time series
+# create sd_dnb and mn_dnb for each dnb time series
 sd_dnb_layer = calc(dnb_stack,function(x){sd(x,na.rm=T)} )
+mn_dnb_layer = calc(dnb_stack,function(x){mean(x,na.rm=T)} )
 
 # read in moon phase (year doy time moon_illum_frac moon_phase_angle)
 phase = read.csv('moon_info.csv')
@@ -482,13 +507,22 @@ phase$date_time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,se
 
 # load the tuned trees
 load(file='..//TestingData//tunedTrees.RData')
-best.model = tuned.r2$best.model
+best.model = tuned.r3$best.model
 
 # iterate through each date_time collect dnb, add sd_dnb illum phase
 prediction_stack = stack()
-for (date_time in dnb_date_time){
+
+
+# remove cloud cells multicore  returns NA but runs fast!
+library(foreach)
+library(doParallel)
+registerDoParallel(32)
+
+prediction_list = foreach(i = 1:length(dnb_date_time), .inorder=T, .errorhandling="remove") %dopar% {
+	date_time = dnb_date_time[i]
 	print(date_time)
-	hold_stack_dnb = dnb_stack[[which(dnb_date_time %in% date_time)]]  # find the dnb that matches date_time
+	# find the dnb that matches date_time
+	hold_stack_dnb = dnb_stack[[which(dnb_date_time %in% date_time)]]  
 	hold_stack_zen = zen_stack[[which(dnb_date_time %in% date_time)]]  
         hold_stack_azt = azt_stack[[which(dnb_date_time %in% date_time)]]  
 	# store illumination
@@ -500,24 +534,22 @@ for (date_time in dnb_date_time){
         hold_stack_phase = hold_stack_azt
         hold_stack_phase[] = phase[phase$date_time == date_time,'phase']
         # stack all data with appropriate names
-	data_stack = stack(hold_stack_dnb,hold_stack_zen,hold_stack_azt,sd_dnb_layer,hold_stack_illum,hold_stack_phase)
-	names(data_stack) = c('dnb','zen','azt','sd_dnb','illum','phase')
+	data_stack = stack(hold_stack_dnb,hold_stack_zen,hold_stack_azt,sd_dnb_layer,hold_stack_illum,hold_stack_phase,mn_dnb_layer)
+	names(data_stack) = c('dnb','zen','azt','sd_dnb','illum','phase','mn_dnb')
 	# predict to surface
 	prediction = raster::predict(data_stack,best.model)
-        writeRaster(prediction,paste('predictions//Prediction_',date_time,'.tif',sep=''),overwrite=T)
-	# store predictions
-	prediction_stack = stack(prediction_stack, prediction)
-	names(prediction_stack)[dim(prediction_stack)[3]] = paste(date_time)
+        names(prediction) = paste(date_time)
+	writeRaster(prediction,paste('predictions//Prediction_',date_time,'.tif',sep=''),overwrite=T)
+	return(prediction)
 	}
 
+
+# convert dopar list to raster stack
+prediction_stack = stack(prediction_list)
 save(prediction_stack, file='prediction_stack_w_cld.RData')
 
 
-foreach(i=1:dim(prediction_stack)[3]) %do% { prediction_stack[[i]][cld_stack[[i]]>0]=NA}
-
-
-setwd('/groups/manngroup/India\ VIIRS/2015')
-
+# remove clouds from prediction stack
 # create raster stacks  & extract data
 files = dir(pattern = '.tif')
 cld = files[grep('cld_v5',files)]
@@ -533,8 +565,9 @@ cld_stack = cld_stack[[ (1:length(common_cld))[common_cld] ]]
 library(foreach)
 library(doParallel)
 registerDoParallel(32)
-foreach(i=1:dim(prediction_stack)[3]) %do% { prediction_stack[[i]][cld_stack[[i]]>0]=NA}
+foreach(i=1:dim(prediction_stack)[3]) %dopar% { prediction_stack[[i]][cld_stack[[i]]>0]=NA}
 save(prediction_stack, file='prediction_stack_wo_cld.RData')
+
 
 #write out prediction mask wo clouds
 for (i in 1:dim(prediction_stack)[3]){
@@ -549,7 +582,7 @@ plot(prediction_stack[[11]])   # good example of outage in image #11
 
 
 
-# IDEA: SHOW CLASSIFIER CLOUD MASK, AS WELL AS EXAMPLES WITH NO LIGHTS AT ALL
+# IDEA: SHOW CLASSIFIER CLOUD MASK, NO LIGHTS AT ALL NEED ITS OWN CLASS
 # MINIMUM MAPPING UNIT
 
 
