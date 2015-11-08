@@ -4,11 +4,11 @@
 # 3) uses this info to train a ML model to predict outages 
 
 # Run the following in bash before starting R
-# module load proj.4/4.8.0
-# module load gdal/gcc/1.11
-# module load R/3.0.2
-# module load gcc/4.9.0
-# R
+ module load proj.4/4.8.0
+ module load gdal/gcc/1.11
+ module load R/3.0.2
+ module load gcc/4.9.0
+ R
 
 
 
@@ -192,16 +192,12 @@ dnb_values_loc[550:650,]
 # save output to load quickly
 setwd('/groups/manngroup/India\ VIIRS/2015')
 
-##save(dnb_values,file='dnb_values_w_moon.RData')
 #save(dnb_values_loc,file='dnb_values_w_moon_loc2.RData')
-#load('dnb_values_w_moon2.RData')
 load('dnb_values_w_moon_loc2.RData')
 
 
 # merge training and testing data
-#dnb_values$type = 'training'
 dnb_values_loc$type = 'testing'
-#dnb_values = rbind.fill(dnb_values,dnb_values_loc)
 dnb_values  = dnb_values_loc
 head(dnb_values)
 
@@ -394,16 +390,20 @@ load('..//TestingData//AllData.RData')
 # set up data for classifier (define what an outage is)
 # read in joined dnb and voltage data where not missing
 test_join_holder=test_join_holder[!is.na(test_join_holder$dnb)&!is.na(test_join_holder$voltage),]
-# define what an outage is
+
+# define classification classes,   voltage below 100v is considered an outage
 hist(test_join_holder$voltage)
-test_join_holder$lightsout = test_join_holder$voltage<100
+test_join_holder$lightsout = NA
+test_join_holder$lightsout[ test_join_holder$voltage<100] = 2
+test_join_holder$lightsout[ test_join_holder$voltage>=100] = 1
+test_join_holder$lightsout[ grepl('uninhabit',test_join_holder$location) ] = 0
 
 
 
 # run a first classifier
 model = randomForest(factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
 	illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)+mn_dnb+I(mn_dnb^2)+
-	I(mn_dnb^3)+I(mn_dnb^3)+I(dnb-mn_dnb), 
+	I(mn_dnb^3)+I(mn_dnb^4)+I(mn_dnb^5)+I(dnb-mn_dnb), 
 	data=test_join_holder, ntree=1000,importance=T,do.trace = 100) 
 model$confusion  #91
 importance(model)
@@ -412,15 +412,9 @@ varImpPlot(model)
 
 # Tune the classifier ------------------------------------------------------------- 
 
-#set.seed(101)
-#alpha     = 0.8 # percentage of training set
-#inTrain   = sample(1:nrow(test_join_holder), alpha * nrow(test_join_holder))
-#train.set = test_join_holder[inTrain,]
-#test.set  = test_join_holder[-inTrain,]
-
 
 # Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
-rf_ranges = list(ntree=seq(1,250,10),mtry=10:30)
+rf_ranges = list(ntree=seq(1,200,10),mtry=10:30)
 
 library(doParallel)
 cl <- makeCluster(detectCores()) 
@@ -428,15 +422,15 @@ registerDoParallel(cl)
 
 form = factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
 	 illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)+mn_dnb+I(mn_dnb^2)+
-        I(mn_dnb^3)+I(mn_dnb^3)+I(dnb-mn_dnb)
+        I(mn_dnb^3)+I(mn_dnb^3)+I(mn_dnb^5)+I(mn_dnb^6)+I(dnb-mn_dnb)+I((dnb-mn_dnb)^2)+I((dnb-mn_dnb)^3)
 
 
 # Tune the tree, multicore
-tuned.r = tune(randomForest, train.x = form, data = test_join_holder,
-         tunecontrol = tune.control(sampling = "fix",fix = 9/10), ranges=rf_ranges)
-tuned.r
-save(tuned.r,file='..//TestingData//tunedTrees1.RData')
-
+#tuned.r = tune(randomForest, train.x = form, data = test_join_holder,
+#         tunecontrol = tune.control(sampling = "fix",fix = 9/10), ranges=rf_ranges)
+#tuned.r
+#save(tuned.r,file='..//TestingData//tunedTrees1.RData')
+#
 
 # Tune the tree, multicore
 tuned.r2 = tune(randomForest, train.x = form, data = test_join_holder,
@@ -449,16 +443,14 @@ save(tuned.r2,file='..//TestingData//tunedTrees2.RData')
 tuned.r3 = tune(randomForest, train.x = form, data = test_join_holder,
          tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges)
 tuned.r3
-save(tuned.r,file='..//TestingData//tunedTrees3.RData')
+save(tuned.r3,file='..//TestingData//tunedTrees3.RData')
 
 save(tuned.r,tuned.r2,tuned.r3,file='..//TestingData//tunedTrees.RData')
 load(file='..//TestingData//tunedTrees.RData')
 
 
-
-
 # read in stored regression trees look at performance 
-tune.number = tuned.r2
+tune.number = tuned.r3
 # Get best parameters
 tune.number$best.parameters
 
@@ -478,9 +470,6 @@ table.random.forest
 # Calculate error rate
 error.rate = 1 - sum(diag(as.matrix(table.random.forest))) / sum(table.random.forest)
 error.rate
-
-
-
 
 
 
@@ -506,19 +495,22 @@ names(phase)=c('year','doy','time', 'illum', 'phase')
 phase$date_time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
 
 # load the tuned trees
-load(file='..//TestingData//tunedTrees.RData')
+load(file='..//TestingData//tunedTrees3.RData')
 best.model = tuned.r3$best.model
 
 # iterate through each date_time collect dnb, add sd_dnb illum phase
 prediction_stack = stack()
 
-
 # remove cloud cells multicore  returns NA but runs fast!
 library(foreach)
 library(doParallel)
 registerDoParallel(32)
+#prediction_list = list()
 
-prediction_list = foreach(i = 1:length(dnb_date_time), .inorder=T, .errorhandling="remove") %dopar% {
+prediction_list = foreach(i = 1:length(dnb_date_time), .inorder=T,.packages=c('raster','e1071'),
+	.errorhandling="remove") %dopar% {
+	# packages must be loaded to each core, error handling removes output when 'next' is invoked, doesn't work in dopar
+	#for (i in 1:1:length(dnb_date_time)){
 	date_time = dnb_date_time[i]
 	print(date_time)
 	# find the dnb that matches date_time
@@ -541,8 +533,9 @@ prediction_list = foreach(i = 1:length(dnb_date_time), .inorder=T, .errorhandlin
         names(prediction) = paste(date_time)
 	writeRaster(prediction,paste('predictions//Prediction_',date_time,'.tif',sep=''),overwrite=T)
 	return(prediction)
+	#prediction_list = c(prediction_list,prediction)
 	}
-
+prediction_list
 
 # convert dopar list to raster stack
 prediction_stack = stack(prediction_list)
@@ -562,19 +555,18 @@ cld_stack = cld_stack[[ (1:length(common_cld))[common_cld] ]]
 
 
 # Mask prediction stack
-library(foreach)
-library(doParallel)
-registerDoParallel(32)
-foreach(i=1:dim(prediction_stack)[3]) %dopar% { prediction_stack[[i]][cld_stack[[i]]>0]=NA}
+foreach(i=1:dim(prediction_stack)[3],.inorder=T,.packages=c('raster')) %dopar% { prediction_stack[[i]][cld_stack[[i]]>0]=NA}
 save(prediction_stack, file='prediction_stack_wo_cld.RData')
 
 
 #write out prediction mask wo clouds
-for (i in 1:dim(prediction_stack)[3]){
+#for (i in 1:dim(prediction_stack)[3]){
+dumbout = foreach(i=1:dim(prediction_stack)[3],.inorder=F,.packages=c('raster'),.errorhandling='remove') %dopar% { 
+   print(i)
    date_time = substr(names(prediction_stack)[i],2,15)
    writeRaster(prediction_stack[[i]],paste('predictions//Prediction_wo_cld',date_time,'.tif',sep=''),overwrite=T)
 }
-
+rm(dumbout)
 
 # plot outages (2 = outage, 1 = normal)
 plot(prediction_stack[[11]])   # good example of outage in image #11
@@ -725,5 +717,14 @@ endCluster()
 #na_dnb_wide_sample = dnb_values[sample(nrow(dnb_values),5000),]
 #wide_kmn_class = kcca(na_dnb_wide_sample, k=3, kccaFamily("kmeans"))
 #na_dnb$kmn = predict(cl1, newdata=na_dnb[,c('dnb'),drop=F])
+
+
+
+#set.seed(101)
+#alpha     = 0.8 # percentage of training set
+#inTrain   = sample(1:nrow(test_join_holder), alpha * nrow(test_join_holder))
+#train.set = test_join_holder[inTrain,]
+#test.set  = test_join_holder[-inTrain,]
+
 
 
