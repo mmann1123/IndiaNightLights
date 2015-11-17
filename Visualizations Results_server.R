@@ -44,6 +44,8 @@ cld = files[grep('cld_v5',files)]
 dnb = files[grep('dnb_v5',files)]
 zen = files[grep('zen_v5',files)]
 azt = files[grep('azt_v5',files)]
+#avoid problem image
+azt = azt[azt!='2015226.2125_azt_v5.tif']
 
 
 # create raster stacks  & extract data
@@ -74,10 +76,16 @@ all.equal(time_stamp_dnb,time_stamp_azt)
 
 
 # limit stacks to common elements  NOT NEEDED IF ALL SAME TIMES
-#common_dnb = (time_stamp_dnb %in% intersect(time_stamp_dnb,time_stamp_cld))
-#dnb_stack = dnb_stack[[ (1:length(common_dnb))[common_dnb] ]]
-#common_cld = (time_stamp_cld %in% intersect(time_stamp_dnb,time_stamp_cld))
-#cld_stack = cld_stack[[ (1:length(common_cld))[common_cld] ]]
+intersect_dates = intersect(intersect(time_stamp_dnb,time_stamp_cld),time_stamp_azt)
+common_dnb = (time_stamp_dnb %in% intersect_dates)
+dnb_stack = dnb_stack[[ (1:length(common_dnb))[common_dnb] ]]
+common_cld = (time_stamp_cld %in% intersect_dates)
+cld_stack = cld_stack[[ (1:length(common_cld))[common_cld] ]]
+common_zen = (time_stamp_zen %in% intersect_dates)
+zen_stack = zen_stack[[ (1:length(common_zen))[common_zen] ]]
+common_azt = (time_stamp_azt %in% intersect_dates)
+azt_stack = azt_stack[[ (1:length(common_azt))[common_azt] ]]
+
 
 
 # remove cloud cells multicore  returns NA but runs fast!
@@ -88,11 +96,11 @@ registerDoParallel(32)
 
 # remove cloud cells multicore  returns NA but runs fast!
 foreach(i=1:dim(dnb_stack)[3]) %dopar% { dnb_stack[[i]][cld_stack[[i]]>0]=NA}
-save(dnb_stack,file = 'dnb_stack_wo_cld.RData')
+save(dnb_stack,file = 'dnb_stack_wo_cld2.RData')
 foreach(i=1:dim(zen_stack)[3]) %dopar% { zen_stack[[i]][cld_stack[[i]]>0]=NA}
-save(zen_stack,file = 'zen_stack_wo_cld.RData')
+save(zen_stack,file = 'zen_stack_wo_cld2.RData')
 foreach(i=1:dim(azt_stack)[3]) %dopar% { azt_stack[[i]][cld_stack[[i]]>0]=NA}
-save(azt_stack,file = 'azt_stack_wo_cld.RData')
+save(azt_stack,file = 'azt_stack_wo_cld2.RData')
 
 
 
@@ -102,19 +110,19 @@ save(azt_stack,file = 'azt_stack_wo_cld.RData')
 rm(list=ls())
 setwd('/groups/manngroup/India\ VIIRS/2015')
 
-load('dnb_stack_wo_cld.RData')    # start here cloud free images stored here.
-load('zen_stack_wo_cld.RData')
-load('azt_stack_wo_cld.RData')
+load('dnb_stack_wo_cld2.RData')    # start here cloud free images stored here.
+load('zen_stack_wo_cld2.RData')
+load('azt_stack_wo_cld2.RData')
 
 
 # extract local testing data 
 # define locations of interest
-locations = read.csv('/groups/manngroup/India VIIRS/TestingData/MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
-locations2 = read.csv('/groups/manngroup/India VIIRS/TestingData/Other 28 ESMI MH Locations Coordinates.csv')
+locations = read.csv('/groups/manngroup/India VIIRS/Location Data/MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
+locations2 = read.csv('/groups/manngroup/India VIIRS/Location Data/Other 28 ESMI MH Locations Coordinates.csv')
 names(locations2) = c('STATE','DISTRICT.CITY','LOCATION','TYPE','LAT','LON','Ag.Rural')
 locations2 = locations2[,!names(locations2) %in% 'TYPE']
 jumba.df = data.frame(STATE='MH', DISTRICT.CITY="NA", LOCATION='Jumda',LAT=20.010094,LON=77.044271, Ag.Rural=T)
-locations3 = read.dbf('/groups/manngroup/India VIIRS/TestingData/Emptyspaces.dbf')
+locations3 = read.dbf('/groups/manngroup/India VIIRS/Location Data/Emptyspaces.dbf')
 names(locations3)=c('ID','LON','LAT')
 locations3$STATE='MH'
 locations3$LOCATION=paste('uninhabited',1:length(locations3$STATE),sep='')
@@ -241,46 +249,33 @@ dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 # only need to run this the first time... processing unformated files
 # install.packages('readxl')
 library(readxl)
-file_list = list.files('..//TestingData//',pattern='2015.xlsx')
-for(i in 1:length(file_list)){
-	print(i)
-	# read in hourly voltage data
-	a_location = read_excel(paste("..//TestingData//",file_list[i],sep=''), na = "NA")
-	names(a_location) = c('location','date','hour',paste(1:60))	
-	head(a_location)
-	
-	if(file_list[i]=='Other 28 ESMI MH Voltage Data 2015.xlsx'){
-		a_location$date = 	# convert file to proper date time 
-		format(strptime(a_location$date,'%m/%d/%Y',tz='Asia/Calcutta'),'%Y-%m-%d',usetz=F)
-		}
-	# put data into long form and sort 
-	longs =  melt(a_location,id=c('location','date','hour') )
-	names(longs) = c('location','date','hour','minute','voltage')
-	longs = longs[with(longs,order(location,date,hour)),]
-	head(longs)
-	#http://www.regexr.com/
-	write.csv(longs,paste('..//TestingData//',gsub('(.[a-z]+$)','\\2',file_list[i]),'.csv',sep=''))
-}
+file_list = list.files('..//Hourly Voltage Data//',pattern='Unified')
+i=1
 
-# Combine all voltage data into one file
-file_list = list.files('..//TestingData//',pattern='2015.csv')
-voltage = read.csv(paste('..//TestingData//',file_list[1],sep=''))
-voltage$hour = as.numeric(voltage$hour) + 1
-print(unique(voltage$hour))
+# read in hourly voltage data
+a_location = read.csv(paste("..//Hourly Voltage Data//",file_list[i],sep=''), na = "NA",stringsAsFactors =F)
+names(a_location) = c('anID','location','date','hour',paste(1:60))	
+a_location = a_location[,c('location','date','hour',paste(1:60))]
+head(a_location)
+
+# two different time stamp types, put all into string version of '%Y-%m-%d'
+new_date = format(strptime(a_location$date,'%m/%d/%Y',tz='Asia/Calcutta'),'%Y-%m-%d',usetz=F)
+a_location$date[!is.na(new_date)] = new_date[!is.na(new_date)] 
+	
+# put data into long form and sort 
+voltage =  melt(a_location,id=c('location','date','hour') )
+names(voltage) = c('location','date','hour','minute','voltage')
+voltage = voltage[with(voltage,order(location,date,hour)),]
 head(voltage)
-for(i in 2:length(file_list)){
-	inner =  read.csv(paste('..//TestingData//',file_list[i],sep=''))
-	print(class(inner$hour)) 
-	inner$hour = as.numeric(inner$hour) + 1
-	print(unique(inner$hour))
-	voltage = rbind.fill(voltage,inner)
-}
+
+# go from 0-23 to 1-24 clock
+voltage$hour =  as.numeric(voltage$hour+1)
 
 
 # save the output
-#save(voltage,file='..//TestingData//Voltage.RData')
+#save(voltage,file='..//Hourly Voltage Data//Voltage2.RData')
 setwd('/groups/manngroup/India\ VIIRS/2015')
-load('..//TestingData//Voltage.RData')
+load('..//TestingData//Voltage2.RData')
 
 
 # deal with date time 
@@ -305,6 +300,7 @@ head(dnb_values$date.time2)
 ###################################################################
 # match to closest time in local data 
 # store location names for dnb and voltage data
+
 locales = unique(dnb_values$location)
 locales_v = unique(voltage$location)
 
@@ -317,10 +313,13 @@ for(i in 1:length(unique(voltage$location))){
 look_up = data.frame(locales =locales,
   	locales_v = apply(data.frame(locales),1,function(x) locales_v[pmatch(x, locales_v)]),
 	stringsAsFactors=F)
-look_up[4,2] = locales_v[37]
-look_up[5,2] = locales_v[36]
-look_up[27,2] = locales_v[23]
-look_up
+
+head(look_up,40)
+
+look_up[4,2] = locales_v[32]
+look_up[5,2] = locales_v[31]
+look_up[27,2] = locales_v[21]
+head(look_up,40)
 
 
 # switch names out use non-voltage data names 
@@ -369,7 +368,7 @@ for(i in 1:length(locales)){
              geom_vline(xintercept = test_join$count[test_join$illum>50],colour='yellow',alpha=0.25, show_guide=T)+
 	     geom_point()+ scale_fill_manual(values = color_codes)+
 	ggtitle(locale)
-	ggsave(a, file=paste('..//TestingData//plot_',locale,'.png',sep=''), width=6, height=4)
+	ggsave(a, file=paste('..//Voltage Plots//plot_',locale,'.png',sep=''), width=6, height=4)
 	remove(test_join) # USE: to avoid mismatch between locations
 	print(locale)
 }
@@ -377,15 +376,13 @@ for(i in 1:length(locales)){
 
 
 # save an image of all the data
-#save.image(file='..//TestingData//AllData.RData')
-
-
+#save.image(file='..//Hourly Voltage Data//AllData.RData')
 
 
 
 # Train a classifier to find outages ----------------------------------------------
 setwd('/groups/manngroup/India\ VIIRS/2015')
-load('..//TestingData//AllData.RData')
+load('..//Hourly Voltage Data//AllData.RData')
 
 # set up data for classifier (define what an outage is)
 # read in joined dnb and voltage data where not missing
@@ -399,9 +396,11 @@ test_join_holder$lightsout[ test_join_holder$voltage>=100] = 1
 test_join_holder$lightsout[ grepl('uninhabit',test_join_holder$location) ] = 0
 
 
+test_join_holder = na.omit(test_join_holder)
+
 
 # run a first classifier
-model = randomForest(factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
+model = randomForest(factor(lightsout)~dnb+zen+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
 	illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)+mn_dnb+I(mn_dnb^2)+
 	I(mn_dnb^3)+I(mn_dnb^4)+I(mn_dnb^5)+I(dnb-mn_dnb), 
 	data=test_join_holder, ntree=1000,importance=T,do.trace = 100) 
@@ -461,10 +460,10 @@ table.random.forest = table(test_join_holder$lightsout, predictions)
 table.random.forest
 
 # next function gives a graphical depiction of the marginal effect of a variable on the class probability (classification) or response (reg$
- partialPlot(best.model, test_join_holder, dnb, "TRUE")
- partialPlot(best.model, test_join_holder, illum, "TRUE")
- partialPlot(best.model, test_join_holder, phase, "TRUE")
- partialPlot(best.model, test_join_holder, mn_dnb, "TRUE")
+partialPlot(best.model, test_join_holder, dnb, "TRUE")
+partialPlot(best.model, test_join_holder, illum, "TRUE")
+partialPlot(best.model, test_join_holder, phase, "TRUE")
+partialPlot(best.model, test_join_holder, mn_dnb, "TRUE")
 
 
 # Calculate error rate
@@ -474,7 +473,6 @@ error.rate
 
 
 # PREDICT OUT OF SAMPLE ---------------------------------------------------------------
-
 
 #remove(list=ls())
 setwd('/groups/manngroup/India\ VIIRS/2015')
@@ -568,42 +566,55 @@ dumbout = foreach(i=1:dim(prediction_stack)[3],.inorder=F,.packages=c('raster'),
 }
 rm(dumbout)
 
-# plot outages (2 = outage, 1 = normal)
+# plot outages (2 = outage, 1 = normal, 0 = no electricity 
 plot(prediction_stack[[11]])   # good example of outage in image #11
 
 
+# IDEAS: GIVE CLASSIFIER TIME OF NIGHT TO SCALE ACORDING TO HOUR. 
 
 
-# IDEA: SHOW CLASSIFIER CLOUD MASK, NO LIGHTS AT ALL NEED ITS OWN CLASS
-# MINIMUM MAPPING UNIT
+# Estimate reliability ----------------------------------------------------
 
+load(file='prediction_stack_wo_cld.RData')
 
-
-
-
-
-
-
-
-
-
-
+outage_count = calc((prediction_stack==2),function(x){sum(x,na.rm=T)})
+cloud_count = calc(is.na(prediction_stack),function(x){sum(x,na.rm=T)})
+leng_days_raster = prediction_stack[[1]]
+leng_days_raster[]=dim(prediction_stack)[3]
+percent_outage = outage_count / (leng_days_raster-cloud_count)
+writeRaster(percent_outage,'predictions/percent_outage.tif')
 
 
 
 
+# Stable Lights Map -------------------------------------------------------
+
+# read in data 
+#rm(list=ls())
+setwd('/groups/manngroup/India\ VIIRS/2015')
+load('dnb_stack_wo_cld.RData')    # start here cloud free images stored here.
+
+# calculate stats
+# mean layer
+mn_dnb_layer = calc(dnb_stack,function(x){mean(x,na.rm=T)} )
+plot(log(mn_dnb_layer))
+writeRaster(mn_dnb_layer,'predictions/mn_dnb_layer.tif')
+# median layer
+md_dnb_layer = calc(dnb_stack,function(x){median(x,na.rm=T)} )
+plot(log(md_dnb_layer))
+writeRaster(md_dnb_layer,'predictions/md_dnb_layer.tif', overwrite=T)
+# quantile layer
+qt_dnb_layer = calc(dnb_stack,function(x){quantile(x,na.rm=T)} )
+names(qt_dnb_layer)=paste('Precentile',c(0,25,50,75,100))
+writeRaster(qt_dnb_layer,'predictions/qt_dnb_layer.tif', overwrite=T)
 
 
 
+# Write out files to KML ------------------------------------------------
+# this works but is pretty low resolution
+KML(md_dnb_layer,'predictions/md_dnb_layer',blur=50,overwrite=T)
 
-
-
-
-
-
-
-
-
+KML(percent_outage,'predictions/percent_outage',blur=50,overwrite=T, col=rev(rainbow(25)))
 
 
 
@@ -621,11 +632,10 @@ help(AnomalyDetectionTs)
 data_urban$date.time = strptime(data_urban$date.time,"%Y%j.%H%M" )
 data3= data_urban[,c('date.time','dnb')]
 data3$dnb = data3$dnb*1e9
-row.names(data3) = 1:dim(data3)[1] 
-res = AnomalyDetectionTs(data3, max_anoms=0.03, direction='pos', plot=TRUE, 
-	piecewise_median_period_weeks=8,longterm=T)
+row.names(data3) = 1:dim(data3)[1]
+res = AnomalyDetectionTs(data3, max_anoms=0.03, direction='pos', plot=TRUE,
+        piecewise_median_period_weeks=8,longterm=T)
 res$plot
-
 
 # impulse sateration https://cran.r-project.org/web/packages/gets/gets.pdf from felix
 library(zoo)
@@ -639,51 +649,9 @@ sat = isat(data4, t.pval=min(0.01,(1/length(data4[,1]))),mxreg=t)
 plot(data4)
 
 
-# Stable Lights Map -------------------------------------------------------
-
-# read in data 
-setwd('C:\\Users\\mmann\\Desktop\\NightTimeData\\')
-
-# pull available files
-files = dir(pattern = '.tif')
-cld = files[grep('cld',files)]
-dnb = files[grep('dnb',files)]
-
-# create raster stacks  & extract data  
-cld_stack = stack(cld)
-dnb_stack = stack(dnb)
-
-# Extract dates  
-time_stamp_dnb = gsub(x=names(dnb_stack),pattern = "(.*X)(.*)(.*_dnb_v3)",replacement = "\\2")
-time_stamp_dnb = strptime(time_stamp_dnb,"%Y%j.%H%M")
-time_stamp_cld = gsub(x=names(cld_stack),pattern = "(.*X)(.*)(.*_cld_v3)",replacement = "\\2")
-time_stamp_cld = strptime(time_stamp_cld,"%Y%j.%H%M")
-
-# not all stacks have same dates
-all.equal(time_stamp_dnb,time_stamp_cld)
-
-# limit stacks to common elements
-common_dnb = (time_stamp_dnb %in% intersect(time_stamp_dnb,time_stamp_cld))
-dnb_stack = dnb_stack[[ (1:length(common_dnb))[common_dnb] ]]
-common_cld = (time_stamp_cld %in% intersect(time_stamp_dnb,time_stamp_cld))
-cld_stack = cld_stack[[ (1:length(common_cld))[common_cld] ]]
-
-# remove cloud cells
-#dnb_stack[cld_stack>1]=NA
-#save(dnb_stack,file = 'dnb_stack_wo_cld.RData')
-load('dnb_stack_wo_cld.RData')
 
 
-# calculate stats
-beginCluster(type='SOCK') #http://rpackages.ianhowson.com/rforge/raster/man/cluster.html
 
-dnb_stack_mean <- clusterR(dnb_stack, mean, args=list(na.rm=T))
-save(dnb_stack_mean,file = 'dnb_stack_mean.RData')
-
-dnb_stack_quan <- clusterR(dnb_stack, quantile, args=list(na.rm=T))
-save(dnb_stack_quan,file = 'dnb_stack_quan.RData')
-
-endCluster()
 
 # Unused code -------------------------------------------------------------
 #   proj_locations = spTransform( locations, CRS( "+proj=eqdc +lat_0=0 +lon_0=0 +lat_1=7 +lat_2=-32 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs " ) )  #http://spatialreference.org/ref/esri/102029/
