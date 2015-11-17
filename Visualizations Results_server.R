@@ -415,30 +415,20 @@ varImpPlot(model)
 # Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
 rf_ranges = list(ntree=seq(1,200,10),mtry=10:30)
 
-library(doParallel)
-cl <- makeCluster(detectCores()) 
-registerDoParallel(cl)
-
 form = factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
 	 illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)+mn_dnb+I(mn_dnb^2)+
         I(mn_dnb^3)+I(mn_dnb^3)+I(mn_dnb^5)+I(mn_dnb^6)+I(dnb-mn_dnb)+I((dnb-mn_dnb)^2)+I((dnb-mn_dnb)^3)
 
 
-# Tune the tree, multicore
-#tuned.r = tune(randomForest, train.x = form, data = test_join_holder,
-#         tunecontrol = tune.control(sampling = "fix",fix = 9/10), ranges=rf_ranges)
-#tuned.r
-#save(tuned.r,file='..//TestingData//tunedTrees1.RData')
-#
 
-# Tune the tree, multicore
+# Tune the tree,  cross validation 5 groups
 tuned.r2 = tune(randomForest, train.x = form, data = test_join_holder,
          tunecontrol = tune.control(sampling = "cross",cross = 10), ranges=rf_ranges)
 tuned.r2
 save(tuned.r2,file='..//TestingData//tunedTrees2.RData')
 
 
-# Tune the tree, multicore
+# Tune the tree, cross validation 5 groups
 tuned.r3 = tune(randomForest, train.x = form, data = test_join_holder,
          tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges)
 tuned.r3
