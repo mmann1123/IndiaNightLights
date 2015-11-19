@@ -395,65 +395,81 @@ test_join_holder$lightsout[ test_join_holder$voltage<100] = 2
 test_join_holder$lightsout[ test_join_holder$voltage>=100] = 1
 test_join_holder$lightsout[ grepl('uninhabit',test_join_holder$location) ] = 0
 
-
+# 5 missing illum and zen
 test_join_holder = na.omit(test_join_holder)
 
+# store training and testing data
+prop = 0.75 # proportion of subset data
+set.seed(1234)
+# training data set 
+training.s = sample (1:nrow(test_join_holder), round(prop*nrow(test_join_holder),0))
+test_join_holder.train = test_join_holder[training.s,]
 
-# run a first classifier
-model = randomForest(factor(lightsout)~dnb+zen+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
-	illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)+mn_dnb+I(mn_dnb^2)+
-	I(mn_dnb^3)+I(mn_dnb^4)+I(mn_dnb^5)+I(dnb-mn_dnb), 
-	data=test_join_holder, ntree=1000,importance=T,do.trace = 100) 
-model$confusion  #91
-importance(model)
-varImpPlot(model)
+# testing data set 
+testing.s <- setdiff(1:nrow(test_join_holder), training.s)
+test_join_holder.test <- test_join_holder[testing.s,]
 
 
 # Tune the classifier ------------------------------------------------------------- 
+
+# LOAD MULTICORE TUNE ----------------------------------------------------
 
 
 # Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
 rf_ranges = list(ntree=seq(1,200,10),mtry=10:30)
 
-form = factor(lightsout)~dnb+zen+azt+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
-	 illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)+mn_dnb+I(mn_dnb^2)+
-        I(mn_dnb^3)+I(mn_dnb^3)+I(mn_dnb^5)+I(mn_dnb^6)+I(dnb-mn_dnb)+I((dnb-mn_dnb)^2)+I((dnb-mn_dnb)^3)
+# features for random forest -  drop azth angle (angle from north, creates discontinuous predictions
+form = factor(lightsout)~dnb+zen+illum+phase
+
+source('..//IndiaNightLights//mctune.R')
+
+
+# remove cloud cells multicore  returns NA but runs fast!
+library(foreach)
+library(doParallel)
+registerDoParallel(32)
+
+
+tuned.r3 = mctune(randomForest, train.x = form, data = test_join_holder.train,
+         tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
+         mc.control=list(mc.cores=16, mc.preschedule=T),confusionmatrizes=T )
+
+save(tuned.r3,file='..//Hourly Voltage Data//tunedTrees3.RData')
+
+
+tuned.r5 = mctune(randomForest, train.x = form, data = test_join_holder.train,
+         tunecontrol = tune.control(sampling = "cross",cross = 10), ranges=rf_ranges,
+   	 mc.control=list(mc.cores=16, mc.preschedule=T),confusionmatrizes=T )
+
+save(tuned.r5,file='..//Hourly Voltage Data//tunedTrees5.RData')
 
 
 
-# Tune the tree,  cross validation 5 groups
-tuned.r2 = tune(randomForest, train.x = form, data = test_join_holder,
-         tunecontrol = tune.control(sampling = "cross",cross = 10), ranges=rf_ranges)
-tuned.r2
-save(tuned.r2,file='..//TestingData//tunedTrees2.RData')
 
 
-# Tune the tree, cross validation 5 groups
-tuned.r3 = tune(randomForest, train.x = form, data = test_join_holder,
-         tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges)
-tuned.r3
-save(tuned.r3,file='..//TestingData//tunedTrees3.RData')
-
-save(tuned.r,tuned.r2,tuned.r3,file='..//TestingData//tunedTrees.RData')
-load(file='..//TestingData//tunedTrees.RData')
+# LOAD REGRESSION TREE RESULTS ----------------------------------------------------
 
 
 # read in stored regression trees look at performance 
-tune.number = tuned.r3
+tune.number = tuned.r5
 # Get best parameters
 tune.number$best.parameters
+tune.number$best.confusionmatrizes
+
+
 
 # Store the best model 
 best.model = tune.number$best.model
+
 predictions = predict(best.model, test_join_holder)
 table.random.forest = table(test_join_holder$lightsout, predictions)
 table.random.forest
 
 # next function gives a graphical depiction of the marginal effect of a variable on the class probability (classification) or response (reg$
-partialPlot(best.model, test_join_holder, dnb, "TRUE")
-partialPlot(best.model, test_join_holder, illum, "TRUE")
-partialPlot(best.model, test_join_holder, phase, "TRUE")
-partialPlot(best.model, test_join_holder, mn_dnb, "TRUE")
+partialPlot(best.model, test_join_holder, dnb, "2")
+partialPlot(best.model, test_join_holder, illum, "2")
+partialPlot(best.model, test_join_holder, phase, "2")
+partialPlot(best.model, test_join_holder, mn_dnb, "2")
 
 
 # Calculate error rate
@@ -483,8 +499,8 @@ names(phase)=c('year','doy','time', 'illum', 'phase')
 phase$date_time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
 
 # load the tuned trees
-load(file='..//TestingData//tunedTrees3.RData')
-best.model = tuned.r3$best.model
+load(file='..//TestingData//tunedTrees5.RData')
+best.model = tuned.r5$best.model
 
 # iterate through each date_time collect dnb, add sd_dnb illum phase
 prediction_stack = stack()
@@ -493,7 +509,7 @@ prediction_stack = stack()
 library(foreach)
 library(doParallel)
 registerDoParallel(32)
-#prediction_list = list()
+
 
 prediction_list = foreach(i = 1:length(dnb_date_time), .inorder=T,.packages=c('raster','e1071'),
 	.errorhandling="remove") %dopar% {
@@ -514,14 +530,14 @@ prediction_list = foreach(i = 1:length(dnb_date_time), .inorder=T,.packages=c('r
         hold_stack_phase = hold_stack_azt
         hold_stack_phase[] = phase[phase$date_time == date_time,'phase']
         # stack all data with appropriate names
-	data_stack = stack(hold_stack_dnb,hold_stack_zen,hold_stack_azt,sd_dnb_layer,hold_stack_illum,hold_stack_phase,mn_dnb_layer)
+	data_stack = stack(hold_stack_dnb,hold_stack_zen,hold_stack_azt,
+		sd_dnb_layer,hold_stack_illum,hold_stack_phase,mn_dnb_layer)
 	names(data_stack) = c('dnb','zen','azt','sd_dnb','illum','phase','mn_dnb')
 	# predict to surface
 	prediction = raster::predict(data_stack,best.model)
         names(prediction) = paste(date_time)
 	writeRaster(prediction,paste('predictions//Prediction_',date_time,'.tif',sep=''),overwrite=T)
 	return(prediction)
-	#prediction_list = c(prediction_list,prediction)
 	}
 prediction_list
 
