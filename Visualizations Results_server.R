@@ -26,7 +26,7 @@ library(e1071)
 library(randomForest)
 library(party)
 library(foreign)
-
+library(caret)
 
 
 # Time Series Plots for locations of interest -----------------------------
@@ -412,7 +412,8 @@ test_join_holder.test <- test_join_holder[testing.s,]
 
 # Tune the classifier ------------------------------------------------------------- 
 
-# LOAD MULTICORE TUNE ----------------------------------------------------
+# Load multicore tuner
+source('..//IndiaNightLights//mctune.R')
 
 
 # Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
@@ -421,7 +422,10 @@ rf_ranges = list(ntree=seq(1,200,10),mtry=10:30)
 # features for random forest -  drop azth angle (angle from north, creates discontinuous predictions
 form = factor(lightsout)~dnb+zen+illum+phase
 
-source('..//IndiaNightLights//mctune.R')
+
+form = factor(lightsout)~dnb+zen+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
+	illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)+mn_dnb+I(mn_dnb^2)+
+	I(mn_dnb^3)+I(mn_dnb^4)+I(mn_dnb^5)+I(dnb-mn_dnb)
 
 
 # remove cloud cells multicore  returns NA but runs fast!
@@ -437,33 +441,26 @@ tuned.r3 = mctune(randomForest, train.x = form, data = test_join_holder.train,
 save(tuned.r3,file='..//Hourly Voltage Data//tunedTrees3.RData')
 
 
-tuned.r5 = mctune(randomForest, train.x = form, data = test_join_holder.train,
-         tunecontrol = tune.control(sampling = "cross",cross = 10), ranges=rf_ranges,
-   	 mc.control=list(mc.cores=16, mc.preschedule=T),confusionmatrizes=T )
 
-save(tuned.r5,file='..//Hourly Voltage Data//tunedTrees5.RData')
+# TEST ACCURACY OF TREES  ----------------------------------------------------
 
 
-
-
-
-# LOAD REGRESSION TREE RESULTS ----------------------------------------------------
-
-
+library(caret)
 # read in stored regression trees look at performance 
-tune.number = tuned.r5
+tune.number = tuned.r3
 # Get best parameters
 tune.number$best.parameters
 tune.number$best.confusionmatrizes
 
 
-
 # Store the best model 
 best.model = tune.number$best.model
-
-predictions = predict(best.model, test_join_holder)
-table.random.forest = table(test_join_holder$lightsout, predictions)
+# Predict out of sample and create confusion matrix
+predictions = predict(best.model, test_join_holder.test)
+table.random.forest = table(test_join_holder.test$lightsout, predictions)
 table.random.forest
+confusionMatrix(predictions, test_join_holder.test$lightsout)
+
 
 # next function gives a graphical depiction of the marginal effect of a variable on the class probability (classification) or response (reg$
 partialPlot(best.model, test_join_holder, dnb, "2")
@@ -490,8 +487,18 @@ load('azt_stack_wo_cld.RData')
 dnb_date_time = substr(names(dnb_stack),2,20)
 
 # create sd_dnb and mn_dnb for each dnb time series
+
+# multicore SOCK doesn't work
+#beginCluster(10, type='SOCK')
+#excluded_packages=c('ggplot2','scales','reshape2','splines','flexclust','rgeos','sampling','plyr',
+#	'e1071','randomForest','party','foreign','caret')
+#f1=function(x){sd(x,na.rm=T)}
+#sd_dnb_layer = clusterR(dnb_stack,fun= f1,exlude=excluded_packages   )
+#endCluster()
+
 sd_dnb_layer = calc(dnb_stack,function(x){sd(x,na.rm=T)} )
 mn_dnb_layer = calc(dnb_stack,function(x){mean(x,na.rm=T)} )
+
 
 # read in moon phase (year doy time moon_illum_frac moon_phase_angle)
 phase = read.csv('moon_info.csv')
@@ -499,17 +506,17 @@ names(phase)=c('year','doy','time', 'illum', 'phase')
 phase$date_time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
 
 # load the tuned trees
-load(file='..//TestingData//tunedTrees5.RData')
-best.model = tuned.r5$best.model
+load(file='..//Hourly Voltage Data//tunedTrees3.RData')
+best.model = tuned.r3$best.model
 
-# iterate through each date_time collect dnb, add sd_dnb illum phase
-prediction_stack = stack()
+
 
 # remove cloud cells multicore  returns NA but runs fast!
 library(foreach)
 library(doParallel)
 registerDoParallel(32)
 
+# iterate through each date_time collect dnb, add sd_dnb illum phase
 
 prediction_list = foreach(i = 1:length(dnb_date_time), .inorder=T,.packages=c('raster','e1071'),
 	.errorhandling="remove") %dopar% {
@@ -559,7 +566,9 @@ cld_stack = cld_stack[[ (1:length(common_cld))[common_cld] ]]
 
 
 # Mask prediction stack
-foreach(i=1:dim(prediction_stack)[3],.inorder=T,.packages=c('raster')) %dopar% { prediction_stack[[i]][cld_stack[[i]]>0]=NA}
+foreach(i=1:dim(prediction_stack)[3],.inorder=T,.packages=c('raster')) %dopar% { 
+	print(i)
+	prediction_stack[[i]][cld_stack[[i]]>0]=NA}
 save(prediction_stack, file='prediction_stack_wo_cld.RData')
 
 
@@ -585,10 +594,10 @@ load(file='prediction_stack_wo_cld.RData')
 
 outage_count = calc((prediction_stack==2),function(x){sum(x,na.rm=T)})
 cloud_count = calc(is.na(prediction_stack),function(x){sum(x,na.rm=T)})
-leng_days_raster = prediction_stack[[1]]
+leng_days_raster = prediction_stack[[1]]  # create a raster that holds the total # of images
 leng_days_raster[]=dim(prediction_stack)[3]
 percent_outage = outage_count / (leng_days_raster-cloud_count)
-writeRaster(percent_outage,'predictions/percent_outage.tif')
+writeRaster(percent_outage,'predictions/percent_outage.tif', overwrite=T)
 
 
 
@@ -604,7 +613,7 @@ load('dnb_stack_wo_cld.RData')    # start here cloud free images stored here.
 # mean layer
 mn_dnb_layer = calc(dnb_stack,function(x){mean(x,na.rm=T)} )
 plot(log(mn_dnb_layer))
-writeRaster(mn_dnb_layer,'predictions/mn_dnb_layer.tif')
+writeRaster(mn_dnb_layer,'predictions/mn_dnb_layer.tif',overwrite=T)
 # median layer
 md_dnb_layer = calc(dnb_stack,function(x){median(x,na.rm=T)} )
 plot(log(md_dnb_layer))
