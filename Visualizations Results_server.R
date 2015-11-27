@@ -10,9 +10,6 @@
  module load gcc/4.9.0
  R
 
-
-
-
 library(raster)
 library(ggplot2)
 library(scales)
@@ -102,6 +99,16 @@ save(zen_stack,file = 'zen_stack_wo_cld2.RData')
 foreach(i=1:dim(azt_stack)[3]) %dopar% { azt_stack[[i]][cld_stack[[i]]>0]=NA}
 save(azt_stack,file = 'azt_stack_wo_cld2.RData')
 
+# add global mean
+Gmn_dnb_stack=dnb_stack
+Gmn = foreach(i=1:dim(dnb_stack)[3], .combine='c') %dopar% {cellStats(dnb_stack[[i]],mean,rm.na=T)}
+for(i in 1:dim(dnb_stack)[3]){Gmn_dnb_stack[[i]][]=Gmn[i]}
+save(Gmn_dnb_stack,file = 'Gmn_dnb_stack_wo_cld2.RData')
+
+Gmd_dnb_stack=dnb_stack
+Gmd = foreach(i=1:dim(dnb_stack)[3],.combine='c') %dopar% {cellStats(dnb_stack[[i]],median,rm.na=T) }
+for(i in 1:dim(dnb_stack)[3]){Gmd_dnb_stack[[i]][]=Gmd[i]}
+save(Gmd_dnb_stack,file = 'Gmd_dnb_stack_wo_cld2.RData')
 
 
 # Extract dnb values for all training data locations  -------------------------------------------
@@ -113,6 +120,8 @@ setwd('/groups/manngroup/India\ VIIRS/2015')
 load('dnb_stack_wo_cld2.RData')    # start here cloud free images stored here.
 load('zen_stack_wo_cld2.RData')
 load('azt_stack_wo_cld2.RData')
+load('Gmd_dnb_stack_wo_cld2.RData')
+load('Gmn_dnb_stack_wo_cld2.RData')
 
 
 # extract local testing data 
@@ -135,9 +144,11 @@ head(locations,50)
 # convert to spatial objects and extract values
 coordinates(locations)= ~LON+LAT
 proj4string(locations) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
-dnb_values_loc = extract(dnb_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)#buffer=1.2e3,
-zen_values_loc = extract(zen_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
-azt_values_loc  = extract(azt_stack,locations,fun= function(x) mean(x,na.rm=T), df=T)
+dnb_values_loc = extract(dnb_stack,locations, df=T)
+zen_values_loc = extract(zen_stack,locations,  df=T)
+azt_values_loc  = extract(azt_stack,locations, df=T)
+Gmd_dnb_values_loc = extract(Gmd_dnb_stack,locations, df=T)
+Gmn_dnb_values_loc = extract(Gmn_dnb_stack,locations, df=T)     
 time_stamp_extract_loc = gsub(x=colnames(dnb_values_loc),pattern = "(.*X)(.*)(.*)",replacement = "\\2")
 
 
@@ -145,6 +156,8 @@ time_stamp_extract_loc = gsub(x=colnames(dnb_values_loc),pattern = "(.*X)(.*)(.*
 names(dnb_values_loc) = time_stamp_extract_loc
 names(zen_values_loc) = time_stamp_extract_loc
 names(azt_values_loc) = time_stamp_extract_loc
+names(Gmn_dnb_values_loc) = time_stamp_extract_loc
+names(Gmd_dnb_values_loc) = time_stamp_extract_loc
 
 
 # put into long form
@@ -173,6 +186,8 @@ put_in_long_loc <- function(wide_data,abreviation){
 dnb_values_loc=put_in_long_loc(dnb_values_loc,'dnb')
 zen_values_loc= put_in_long_loc(zen_values_loc,'zen')
 azt_values_loc=put_in_long_loc(azt_values_loc,'azt')
+Gmd_dnb_values_loc=put_in_long_loc(Gmd_dnb_values_loc,'Gmd')
+Gmn_dnb_values_loc=put_in_long_loc(Gmn_dnb_values_loc,'Gmn')
 
 
 # add moon phase
@@ -186,6 +201,8 @@ phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,se
 # join in moon and dnb
 dnb_values_loc = join(dnb_values_loc,zen_values_loc) # add moon characteristics to dnb values
 dnb_values_loc = join(dnb_values_loc,azt_values_loc)
+dnb_values_loc = join(dnb_values_loc,Gmd_dnb_values_loc)
+dnb_values_loc = join(dnb_values_loc,Gmn_dnb_values_loc)
 dnb_values_loc = join(dnb_values_loc,phase)
 #head(dnb_values[20000:25000,],50)
 dnb_values_loc[550:650,]
@@ -213,10 +230,13 @@ head(dnb_values)
 # create descriptive statistics
 sd_dnb = aggregate(dnb~location,data=dnb_values,function(x) sd(x,na.rm=T))
 mn_dnb = aggregate(dnb~location,data=dnb_values,function(x) mean(x,na.rm=T))
+md_dnb = aggregate(dnb~location,data=dnb_values,function(x) median(x,na.rm=T))
 names(sd_dnb)=c('location','sd_dnb')
 names(mn_dnb)=c('location','mn_dnb')
+names(md_dnb)=c('location','md_dnb')
 dnb_values = join(dnb_values, mn_dnb)
 dnb_values = join(dnb_values, sd_dnb)
+dnb_values = join(dnb_values, md_dnb)
 
 
 # New KMEANS out of sample   # NOTE K MEAN CAN BE ON MEAN OR ACTUAL VALUES
@@ -244,6 +264,8 @@ dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
     
 
 # Compare to actual outage data  ----------------------------------------------------------
+
+
 
 # read in each xls file and convert to long format and write to csv
 # only need to run this the first time... processing unformated files
@@ -343,7 +365,7 @@ for(i in 1:length(locales)){
 	# if locations are missing
 	if( (dim(test_site)[1]==0 | dim(test_voltage)[1]==0) & !grepl('uninhabit',locale)   ){next}   # avoid missing data but not uninhabited  not finding voltage data for jumba
         # if locations are missing & the area is uninhabited
-	# create an empty dataframe with dates that match dnb and fill voltage with 0s 
+	# create an empty dataframe with dates that match dnb and fill voltage with os 
 	if(dim(test_voltage)[1]==0 & grepl("uninhabit",locale) ){
 		test_voltage = data.frame(date.time2=as.POSIXct(test_site$date.time2), voltage=0)
 		test_voltage$date.time2 = as.POSIXct(test_site$date.time2, tz="UTC") # tz doesn't get assigned without this  	
@@ -391,9 +413,9 @@ test_join_holder=test_join_holder[!is.na(test_join_holder$dnb)&!is.na(test_join_
 # define classification classes,   voltage below 100v is considered an outage
 hist(test_join_holder$voltage)
 test_join_holder$lightsout = NA
-test_join_holder$lightsout[ test_join_holder$voltage<100] = 2
-test_join_holder$lightsout[ test_join_holder$voltage>=100] = 1
-test_join_holder$lightsout[ grepl('uninhabit',test_join_holder$location) ] = 0
+test_join_holder$lightsout[ test_join_holder$voltage<100  ] = 2   # outage 
+test_join_holder$lightsout[ test_join_holder$voltage>=100 & test_join_holder$voltage<1000  ] = 1 # normal
+test_join_holder$lightsout[ grepl('uninhabit',test_join_holder$location) ] = 0   # uninhabited 
 
 # 5 missing illum and zen
 test_join_holder = na.omit(test_join_holder)
@@ -406,8 +428,10 @@ training.s = sample (1:nrow(test_join_holder), round(prop*nrow(test_join_holder)
 test_join_holder.train = test_join_holder[training.s,]
 
 # testing data set 
-testing.s <- setdiff(1:nrow(test_join_holder), training.s)
-test_join_holder.test <- test_join_holder[testing.s,]
+testing.s = setdiff(1:nrow(test_join_holder), training.s)
+test_join_holder.test = test_join_holder[testing.s,]
+
+
 
 
 # Tune the classifier ------------------------------------------------------------- 
@@ -417,40 +441,37 @@ source('..//IndiaNightLights//mctune.R')
 
 
 # Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
-rf_ranges = list(ntree=seq(1,200,10),mtry=10:30)
+rf_ranges = list(ntree=seq(1,40,1),mtry=5:35)
 
 # features for random forest -  drop azth angle (angle from north, creates discontinuous predictions
-form = factor(lightsout)~dnb+zen+illum+phase
 
+form = factor(lightsout)~dnb+illum+phase+sd_dnb+mn_dnb+I(dnb-mn_dnb)+md_dnb+I(dnb-md_dnb)
 
-form = factor(lightsout)~dnb+zen+illum+phase+I(dnb^2)+I(zen^2)+I(azt^2)+I(illum^2)+
-	illum:zen+illum:azt+sd_dnb+I(sd_dnb*2)+I(sd_dnb*3)+I(sd_dnb*4)+I(sd_dnb*5)+I(sd_dnb*6)+mn_dnb+I(mn_dnb^2)+
-	I(mn_dnb^3)+I(mn_dnb^4)+I(mn_dnb^5)+I(dnb-mn_dnb)
-
+#1691    0     0
+#0     1737   48
+#0      83    31
 
 # remove cloud cells multicore  returns NA but runs fast!
 library(foreach)
 library(doParallel)
 registerDoParallel(32)
 
-
-tuned.r3 = mctune(randomForest, train.x = form, data = test_join_holder.train,
+tuned.r10 = mctune(randomForest, train.x = form, data = test_join_holder.train,
          tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
          mc.control=list(mc.cores=16, mc.preschedule=T),confusionmatrizes=T )
 
-save(tuned.r3,file='..//Hourly Voltage Data//tunedTrees3.RData')
-
+save(tuned.r10,file='..//Hourly Voltage Data//tunedTrees10.RData')
 
 
 # TEST ACCURACY OF TREES  ----------------------------------------------------
 
-
-library(caret)
+#library(caret)
 # read in stored regression trees look at performance 
-tune.number = tuned.r3
+tune.number = tuned.r10
 # Get best parameters
 tune.number$best.parameters
 tune.number$best.confusionmatrizes
+plot(tuned.r10)
 
 
 # Store the best model 
@@ -459,7 +480,7 @@ best.model = tune.number$best.model
 predictions = predict(best.model, test_join_holder.test)
 table.random.forest = table(test_join_holder.test$lightsout, predictions)
 table.random.forest
-confusionMatrix(predictions, test_join_holder.test$lightsout)
+#confusionMatrix(predictions, test_join_holder.test$lightsout)
 
 
 # next function gives a graphical depiction of the marginal effect of a variable on the class probability (classification) or response (reg$
@@ -473,6 +494,13 @@ partialPlot(best.model, test_join_holder, mn_dnb, "2")
 error.rate = 1 - sum(diag(as.matrix(table.random.forest))) / sum(table.random.forest)
 error.rate
 
+
+# try using random forest with new parameters
+# ntree 17 mtry 2
+tuned.r11 = randomForest(form, data = test_join_holder.train,do.trace=T,ntree=34,mtry=1)
+varImpPlot(tuned.r11)
+
+#plot(outlier(best.model), type="h",col=c("red", "green", "blue")[as.numeric(test_join_hoolder.train$lightsout)])
 
 
 # PREDICT OUT OF SAMPLE ---------------------------------------------------------------
@@ -488,16 +516,9 @@ dnb_date_time = substr(names(dnb_stack),2,20)
 
 # create sd_dnb and mn_dnb for each dnb time series
 
-# multicore SOCK doesn't work
-#beginCluster(10, type='SOCK')
-#excluded_packages=c('ggplot2','scales','reshape2','splines','flexclust','rgeos','sampling','plyr',
-#	'e1071','randomForest','party','foreign','caret')
-#f1=function(x){sd(x,na.rm=T)}
-#sd_dnb_layer = clusterR(dnb_stack,fun= f1,exlude=excluded_packages   )
-#endCluster()
-
 sd_dnb_layer = calc(dnb_stack,function(x){sd(x,na.rm=T)} )
 mn_dnb_layer = calc(dnb_stack,function(x){mean(x,na.rm=T)} )
+md_dnb_layer = calc(dnb_stack,function(x){median(x,na.rm=T)} )
 
 
 # read in moon phase (year doy time moon_illum_frac moon_phase_angle)
@@ -507,7 +528,7 @@ phase$date_time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,se
 
 # load the tuned trees
 load(file='..//Hourly Voltage Data//tunedTrees3.RData')
-best.model = tuned.r3$best.model
+best.model = tuned.r10$best.model
 
 
 
@@ -708,6 +729,8 @@ plot(data4)
 #inTrain   = sample(1:nrow(test_join_holder), alpha * nrow(test_join_holder))
 #train.set = test_join_holder[inTrain,]
 #test.set  = test_join_holder[-inTrain,]
+
+
 
 
 
