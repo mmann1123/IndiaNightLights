@@ -144,6 +144,7 @@ head(locations,50)
 # convert to spatial objects and extract values
 coordinates(locations)= ~LON+LAT
 proj4string(locations) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+save(locations,file='locationsXY.RData')
 dnb_values_loc = extract(dnb_stack,locations, df=T)
 zen_values_loc = extract(zen_stack,locations,  df=T)
 azt_values_loc  = extract(azt_stack,locations, df=T)
@@ -417,6 +418,9 @@ test_join_holder$lightsout[ test_join_holder$voltage<100  ] = 2   # outage
 test_join_holder$lightsout[ test_join_holder$voltage>=100 & test_join_holder$voltage<1000  ] = 1 # normal
 test_join_holder$lightsout[ grepl('uninhabit',test_join_holder$location) ] = 0   # uninhabited 
 
+test_join_holder = test_join_holder[!(test_join_holder$location=='Chandikapur'|test_join_holder$location=='Kanheri Sarap'),]
+
+
 # 5 missing illum and zen
 test_join_holder = na.omit(test_join_holder)
 
@@ -559,8 +563,8 @@ prediction_list = foreach(i = 1:length(dnb_date_time), .inorder=T,.packages=c('r
         hold_stack_phase[] = phase[phase$date_time == date_time,'phase']
         # stack all data with appropriate names
 	data_stack = stack(hold_stack_dnb,hold_stack_zen,hold_stack_azt,
-		sd_dnb_layer,hold_stack_illum,hold_stack_phase,mn_dnb_layer)
-	names(data_stack) = c('dnb','zen','azt','sd_dnb','illum','phase','mn_dnb')
+		sd_dnb_layer,hold_stack_illum,hold_stack_phase,mn_dnb_layer,md_dnb_layer)
+	names(data_stack) = c('dnb','zen','azt','sd_dnb','illum','phase','mn_dnb','md_dnb')
 	# predict to surface
 	prediction = raster::predict(data_stack,best.model)
         names(prediction) = paste(date_time)
@@ -610,7 +614,7 @@ plot(prediction_stack[[11]])   # good example of outage in image #11
 
 
 # Estimate reliability ----------------------------------------------------
-
+setwd('/groups/manngroup/India\ VIIRS/2015')
 load(file='prediction_stack_wo_cld.RData')
 
 outage_count = calc((prediction_stack==2),function(x){sum(x,na.rm=T)})
@@ -620,7 +624,41 @@ leng_days_raster[]=dim(prediction_stack)[3]
 percent_outage = outage_count / (leng_days_raster-cloud_count)
 writeRaster(percent_outage,'predictions/percent_outage.tif', overwrite=T)
 
+# compare to actual reliability 
+load('..//Hourly Voltage Data//AllData.RData')
+percent_outage = raster('predictions/percent_outage.tif')
 
+# set up data for classifier (define what an outage is)
+# read in joined dnb and voltage data where not missing
+test_join_holder=test_join_holder[!is.na(test_join_holder$dnb)&!is.na(test_join_holder$voltage),]
+
+# find # of days of outages  voltage below 100v is considered an outage
+hist(test_join_holder$voltage)
+test_join_holder$lightsout = NA
+test_join_holder$lightsout[ test_join_holder$voltage<100  ] = 1   # outage
+test_join_holder$lightsout[ grepl('uninhabit',test_join_holder$location)  ] = 0   # uninhabited areas assigned value of zero b/c no lights
+
+
+count_out = aggregate(lightsout~location, data = test_join_holder, function(x){sum(x,na.rm=T)}) # count outages
+#count number of days with obs
+test_join_holder$obs = 1 
+out_of = aggregate(obs~location, data = test_join_holder, function(x){sum(x,na.rm=T)})
+reliability = join(count_out,out_of)
+reliability$percent_outage = reliability$lightsout / reliability$obs
+
+#extract dnb estimates of percent_outage to points
+load('locationsXY.RData')
+locations_reliability = locations
+names(locations_reliability) = c('STATE','DISTRICT.CITY','location','Ag.Rural','ID')
+locations_reliability@data = locations_reliability@data[!(locations_reliability@data$location=='Chandikapur'|
+	locations_reliability@data$location=='Kanheri Sarap'),]
+locations_reliability@data = join(locations_reliability@data,reliability)
+locations_reliability@data = cbind(locations_reliability@data ,extract(percent_outage,locations_reliability, df=T))
+
+#visualize comparison
+plot(locations_reliability@data$layer,locations_reliability@data$percent_outage,xlab='predicted',ylab='actual')
+lm1 = lm(percent_outage~layer,data=locations_reliability@data)
+summary(lm1)
 
 
 # Stable Lights Map -------------------------------------------------------
