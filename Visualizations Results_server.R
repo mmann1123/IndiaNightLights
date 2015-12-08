@@ -31,7 +31,7 @@ library(caret)
 
 # Lunar adjustments ------------------------------------------------------
 # try to remove cyclical lunar signal from cells
-
+rm(list=ls())
 # read in data
 setwd('/groups/manngroup/India\ VIIRS/2015')
 
@@ -98,6 +98,7 @@ foreach(i=1:dim(zen_stack)[3]) %dopar% { zen_stack[[i]][cld_stack[[i]]>0]=NA}
 save(zen_stack,file = 'zen_stack_wo_cld2.RData')
 foreach(i=1:dim(azt_stack)[3]) %dopar% { azt_stack[[i]][cld_stack[[i]]>0]=NA}
 save(azt_stack,file = 'azt_stack_wo_cld2.RData')
+save(cld_stack,file = 'cld_stack.RData')
 
 # add global mean
 Gmn_dnb_stack=dnb_stack
@@ -120,6 +121,7 @@ setwd('/groups/manngroup/India\ VIIRS/2015')
 load('dnb_stack_wo_cld2.RData')    # start here cloud free images stored here.
 load('zen_stack_wo_cld2.RData')
 load('azt_stack_wo_cld2.RData')
+load('cld_stack.RData')
 load('Gmd_dnb_stack_wo_cld2.RData')
 load('Gmn_dnb_stack_wo_cld2.RData')
 
@@ -150,6 +152,7 @@ zen_values_loc = extract(zen_stack,locations,  df=T)
 azt_values_loc  = extract(azt_stack,locations, df=T)
 Gmd_dnb_values_loc = extract(Gmd_dnb_stack,locations, df=T)
 Gmn_dnb_values_loc = extract(Gmn_dnb_stack,locations, df=T)     
+cld_values_loc = extract(cld_stack,locations, df=T)
 time_stamp_extract_loc = gsub(x=colnames(dnb_values_loc),pattern = "(.*X)(.*)(.*)",replacement = "\\2")
 
 
@@ -159,6 +162,7 @@ names(zen_values_loc) = time_stamp_extract_loc
 names(azt_values_loc) = time_stamp_extract_loc
 names(Gmn_dnb_values_loc) = time_stamp_extract_loc
 names(Gmd_dnb_values_loc) = time_stamp_extract_loc
+names(cld_values_loc) = time_stamp_extract_loc
 
 
 # put into long form
@@ -187,6 +191,7 @@ put_in_long_loc <- function(wide_data,abreviation){
 dnb_values_loc=put_in_long_loc(dnb_values_loc,'dnb')
 zen_values_loc= put_in_long_loc(zen_values_loc,'zen')
 azt_values_loc=put_in_long_loc(azt_values_loc,'azt')
+cld_values_loc=put_in_long_loc(cld_values_loc,'cld')
 Gmd_dnb_values_loc=put_in_long_loc(Gmd_dnb_values_loc,'Gmd')
 Gmn_dnb_values_loc=put_in_long_loc(Gmn_dnb_values_loc,'Gmn')
 
@@ -205,6 +210,8 @@ dnb_values_loc = join(dnb_values_loc,azt_values_loc)
 dnb_values_loc = join(dnb_values_loc,Gmd_dnb_values_loc)
 dnb_values_loc = join(dnb_values_loc,Gmn_dnb_values_loc)
 dnb_values_loc = join(dnb_values_loc,phase)
+dnb_values_loc = join(dnb_values_loc,cld_values_loc)
+
 #head(dnb_values[20000:25000,],50)
 dnb_values_loc[550:650,]
 
@@ -417,7 +424,7 @@ test_join_holder$lightsout = NA
 test_join_holder$lightsout[ test_join_holder$voltage<100  ] = 2   # outage 
 test_join_holder$lightsout[ test_join_holder$voltage>=100 & test_join_holder$voltage<1000  ] = 1 # normal
 test_join_holder$lightsout[ grepl('uninhabit',test_join_holder$location) ] = 0   # uninhabited 
-
+# remove two problem sites with extremely high outage rates (over 50%)
 test_join_holder = test_join_holder[!(test_join_holder$location=='Chandikapur'|test_join_holder$location=='Kanheri Sarap'),]
 
 
@@ -443,13 +450,12 @@ test_join_holder.test = test_join_holder[testing.s,]
 # Load multicore tuner
 source('..//IndiaNightLights//mctune.R')
 
-
 # Choose tune parameters #ntree=number of trees, #mtry=# of features sampled for use at each node for splitting
 rf_ranges = list(ntree=seq(1,40,1),mtry=5:35)
 
 # features for random forest -  drop azth angle (angle from north, creates discontinuous predictions
 
-form = factor(lightsout)~dnb+illum+phase+sd_dnb+mn_dnb+I(dnb-mn_dnb)+md_dnb+I(dnb-md_dnb)
+form = factor(lightsout)~dnb+illum+phase+md_dnb+I(dnb-md_dnb) #dont use: sd_dnb mn_dnb+I(dnb-mn_dnb)
 
 #1691    0     0
 #0     1737   48
@@ -460,9 +466,23 @@ library(foreach)
 library(doParallel)
 registerDoParallel(32)
 
+# custom error function
+custom_error = function(y,pred){
+  # this function is minimized if set in mc.control. compare actual rates to predicted outage rates
+  # takes two parameters, actualvalues and predicted values
+  # 2 = outage, 1 = normal, 0 = uninhabited
+
+  # DOESN'T TAKE INTO ACCOUNT CLOUDS!
+  y.outrate = sum(y==2,na.rm=T)/length(y)
+  pred.outrate = sum(pred==2,na.rm=T)/length(pred)
+  return((y.outrate-pred.outrate)^2)	
+}
+
+
+
 tuned.r10 = mctune(randomForest, train.x = form, data = test_join_holder.train,
          tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
-         mc.control=list(mc.cores=16, mc.preschedule=T),confusionmatrizes=T )
+         mc.control=list(mc.cores=16, mc.preschedule=T,error.fun=custom_error),confusionmatrizes=T )
 
 save(tuned.r10,file='..//Hourly Voltage Data//tunedTrees10.RData')
 
@@ -501,8 +521,8 @@ error.rate
 
 # try using random forest with new parameters
 # ntree 17 mtry 2
-tuned.r11 = randomForest(form, data = test_join_holder.train,do.trace=T,ntree=34,mtry=1)
-varImpPlot(tuned.r11)
+#tuned.r11 = randomForest(form, data = test_join_holder.train,do.trace=T,ntree=34,mtry=1)
+#varImpPlot(tuned.r11)
 
 #plot(outlier(best.model), type="h",col=c("red", "green", "blue")[as.numeric(test_join_hoolder.train$lightsout)])
 
@@ -514,8 +534,8 @@ setwd('/groups/manngroup/India\ VIIRS/2015')
 
 # load raster stacks
 load('dnb_stack_wo_cld.RData')   
-load('zen_stack_wo_cld.RData')
-load('azt_stack_wo_cld.RData')
+#load('zen_stack_wo_cld.RData')
+#load('azt_stack_wo_cld.RData')
 dnb_date_time = substr(names(dnb_stack),2,20)
 
 # create sd_dnb and mn_dnb for each dnb time series
@@ -531,7 +551,7 @@ names(phase)=c('year','doy','time', 'illum', 'phase')
 phase$date_time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,sep='')
 
 # load the tuned trees
-load(file='..//Hourly Voltage Data//tunedTrees3.RData')
+load(file='..//Hourly Voltage Data//tunedTrees10.RData')
 best.model = tuned.r10$best.model
 
 
@@ -551,20 +571,20 @@ prediction_list = foreach(i = 1:length(dnb_date_time), .inorder=T,.packages=c('r
 	print(date_time)
 	# find the dnb that matches date_time
 	hold_stack_dnb = dnb_stack[[which(dnb_date_time %in% date_time)]]  
-	hold_stack_zen = zen_stack[[which(dnb_date_time %in% date_time)]]  
-        hold_stack_azt = azt_stack[[which(dnb_date_time %in% date_time)]]  
+#	hold_stack_zen = zen_stack[[which(dnb_date_time %in% date_time)]]  
+#        hold_stack_azt = azt_stack[[which(dnb_date_time %in% date_time)]]  
 	# store illumination
 	# avoid missing data
 	if(length(phase[phase$date_time == date_time,'illum'])==0){next}
-	hold_stack_illum = hold_stack_azt
+	hold_stack_illum = hold_stack_dnb
 	hold_stack_illum[] = phase[phase$date_time == date_time,'illum']
 	# store phase
-        hold_stack_phase = hold_stack_azt
+        hold_stack_phase = hold_stack_dnb
         hold_stack_phase[] = phase[phase$date_time == date_time,'phase']
         # stack all data with appropriate names
-	data_stack = stack(hold_stack_dnb,hold_stack_zen,hold_stack_azt,
+	data_stack = stack(hold_stack_dnb,
 		sd_dnb_layer,hold_stack_illum,hold_stack_phase,mn_dnb_layer,md_dnb_layer)
-	names(data_stack) = c('dnb','zen','azt','sd_dnb','illum','phase','mn_dnb','md_dnb')
+	names(data_stack) = c('dnb','sd_dnb','illum','phase','mn_dnb','md_dnb')
 	# predict to surface
 	prediction = raster::predict(data_stack,best.model)
         names(prediction) = paste(date_time)
@@ -650,15 +670,22 @@ reliability$percent_outage = reliability$lightsout / reliability$obs
 load('locationsXY.RData')
 locations_reliability = locations
 names(locations_reliability) = c('STATE','DISTRICT.CITY','location','Ag.Rural','ID')
-locations_reliability@data = locations_reliability@data[!(locations_reliability@data$location=='Chandikapur'|
+locations_reliability = locations_reliability[!(locations_reliability@data$location=='Chandikapur'|
 	locations_reliability@data$location=='Kanheri Sarap'),]
 locations_reliability@data = join(locations_reliability@data,reliability)
 locations_reliability@data = cbind(locations_reliability@data ,extract(percent_outage,locations_reliability, df=T))
+names(locations_reliability)=c("STATE","DISTRICT.CITY","location","Ag.Rural","ID","lightsout",
+	"obs","percent_outage","ID","percent_outage_estimate")
+
 
 #visualize comparison
-plot(locations_reliability@data$layer,locations_reliability@data$percent_outage,xlab='predicted',ylab='actual')
-lm1 = lm(percent_outage~layer,data=locations_reliability@data)
+plot(locations_reliability@data$percent_outage_estimate,locations_reliability@data$percent_outage,xlab='predicted',ylab='actual')
+lm1 = lm(percent_outage~percent_outage_estimate,data=locations_reliability@data)
 summary(lm1)
+# test if intercept = 0 and slope = 1
+(summary(lm1)$coefficients[1]-0)/summary(lm1)$coefficients[3]
+(summary(lm1)$coefficients[2]-1)/summary(lm1)$coefficients[4]
+#0.13 without sd or mn
 
 
 # Stable Lights Map -------------------------------------------------------
