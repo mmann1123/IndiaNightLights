@@ -32,6 +32,7 @@ library(caret)
 # Lunar adjustments ------------------------------------------------------
 # try to remove cyclical lunar signal from cells
 rm(list=ls())
+
 # read in data
 setwd('/groups/manngroup/India\ VIIRS/2015')
 
@@ -39,17 +40,17 @@ setwd('/groups/manngroup/India\ VIIRS/2015')
 files = dir(pattern = '.tif')
 cld = files[grep('cld_v5',files)]
 dnb = files[grep('dnb_v5',files)]
-zen = files[grep('zen_v5',files)]
-azt = files[grep('azt_v5',files)]
+#zen = files[grep('zen_v5',files)]
+#azt = files[grep('azt_v5',files)]
 #avoid problem image
-azt = azt[azt!='2015226.2125_azt_v5.tif']
+#azt = azt[azt!='2015226.2125_azt_v5.tif']
 
 
 # create raster stacks  & extract data
 cld_stack = stack(cld)
 dnb_stack = stack(dnb)
-zen_stack = stack(zen)
-azt_stack = stack(azt)
+#zen_stack = stack(zen)
+#azt_stack = stack(azt)
 
 
 # Extract dates
@@ -59,29 +60,30 @@ names(dnb_stack) = format(time_stamp_dnb,"%Y%j.%H%M",usetz=F)
 time_stamp_cld = gsub(x=names(cld_stack),pattern = "(.*X)(.*)(.*_cld_v5)",replacement = "\\2")
 time_stamp_cld = strptime(time_stamp_cld,"%Y%j.%H%M", tz = 'UTC')
 names(cld_stack) = format(time_stamp_cld,"%Y%j.%H%M",usetz=F)
-time_stamp_zen = gsub(x=names(zen_stack),pattern = "(.*X)(.*)(.*_zen_v5)",replacement = "\\2")
-time_stamp_zen = strptime(time_stamp_zen,"%Y%j.%H%M", tz = 'UTC')
-names(zen_stack) = format(time_stamp_zen,"%Y%j.%H%M",usetz=F)
-time_stamp_azt = gsub(x=names(azt_stack),pattern = "(.*X)(.*)(.*_azt_v5)",replacement = "\\2")
-time_stamp_azt = strptime(time_stamp_azt,"%Y%j.%H%M", tz = 'UTC')
-names(azt_stack) = format(time_stamp_azt,"%Y%j.%H%M",usetz=F)
+#time_stamp_zen = gsub(x=names(zen_stack),pattern = "(.*X)(.*)(.*_zen_v5)",replacement = "\\2")
+#time_stamp_zen = strptime(time_stamp_zen,"%Y%j.%H%M", tz = 'UTC')
+#names(zen_stack) = format(time_stamp_zen,"%Y%j.%H%M",usetz=F)
+#time_stamp_azt = gsub(x=names(azt_stack),pattern = "(.*X)(.*)(.*_azt_v5)",replacement = "\\2")
+#time_stamp_azt = strptime(time_stamp_azt,"%Y%j.%H%M", tz = 'UTC')
+#names(azt_stack) = format(time_stamp_azt,"%Y%j.%H%M",usetz=F)
 
 # TEST: not all stacks have same dates
 all.equal(time_stamp_dnb,time_stamp_cld)
-all.equal(time_stamp_dnb,time_stamp_zen)
-all.equal(time_stamp_dnb,time_stamp_azt)
+#all.equal(time_stamp_dnb,time_stamp_zen)
+#all.equal(time_stamp_dnb,time_stamp_azt)
 
 
 # limit stacks to common elements  NOT NEEDED IF ALL SAME TIMES
-intersect_dates = intersect(intersect(time_stamp_dnb,time_stamp_cld),time_stamp_azt)
+intersect_dates = intersect(time_stamp_dnb,time_stamp_cld)
+#intersect_dates = intersect(intersect(time_stamp_dnb,time_stamp_cld),time_stamp_azt)
 common_dnb = (time_stamp_dnb %in% intersect_dates)
 dnb_stack = dnb_stack[[ (1:length(common_dnb))[common_dnb] ]]
 common_cld = (time_stamp_cld %in% intersect_dates)
 cld_stack = cld_stack[[ (1:length(common_cld))[common_cld] ]]
-common_zen = (time_stamp_zen %in% intersect_dates)
-zen_stack = zen_stack[[ (1:length(common_zen))[common_zen] ]]
-common_azt = (time_stamp_azt %in% intersect_dates)
-azt_stack = azt_stack[[ (1:length(common_azt))[common_azt] ]]
+#common_zen = (time_stamp_zen %in% intersect_dates)
+#zen_stack = zen_stack[[ (1:length(common_zen))[common_zen] ]]
+#common_azt = (time_stamp_azt %in% intersect_dates)
+#azt_stack = azt_stack[[ (1:length(common_azt))[common_azt] ]]
 
 
 
@@ -94,10 +96,10 @@ registerDoParallel(32)
 # remove cloud cells multicore  returns NA but runs fast!
 foreach(i=1:dim(dnb_stack)[3]) %dopar% { dnb_stack[[i]][cld_stack[[i]]>0]=NA}
 save(dnb_stack,file = 'dnb_stack_wo_cld2.RData')
-foreach(i=1:dim(zen_stack)[3]) %dopar% { zen_stack[[i]][cld_stack[[i]]>0]=NA}
-save(zen_stack,file = 'zen_stack_wo_cld2.RData')
-foreach(i=1:dim(azt_stack)[3]) %dopar% { azt_stack[[i]][cld_stack[[i]]>0]=NA}
-save(azt_stack,file = 'azt_stack_wo_cld2.RData')
+#foreach(i=1:dim(zen_stack)[3]) %dopar% { zen_stack[[i]][cld_stack[[i]]>0]=NA}
+#save(zen_stack,file = 'zen_stack_wo_cld2.RData')
+#foreach(i=1:dim(azt_stack)[3]) %dopar% { azt_stack[[i]][cld_stack[[i]]>0]=NA}
+#save(azt_stack,file = 'azt_stack_wo_cld2.RData')
 save(cld_stack,file = 'cld_stack.RData')
 
 # add global mean
@@ -106,6 +108,7 @@ Gmn = foreach(i=1:dim(dnb_stack)[3], .combine='c') %dopar% {cellStats(dnb_stack[
 for(i in 1:dim(dnb_stack)[3]){Gmn_dnb_stack[[i]][]=Gmn[i]}
 save(Gmn_dnb_stack,file = 'Gmn_dnb_stack_wo_cld2.RData')
 
+# add global median
 Gmd_dnb_stack=dnb_stack
 Gmd = foreach(i=1:dim(dnb_stack)[3],.combine='c') %dopar% {cellStats(dnb_stack[[i]],median,rm.na=T) }
 for(i in 1:dim(dnb_stack)[3]){Gmd_dnb_stack[[i]][]=Gmd[i]}
@@ -119,8 +122,8 @@ rm(list=ls())
 setwd('/groups/manngroup/India\ VIIRS/2015')
 
 load('dnb_stack_wo_cld2.RData')    # start here cloud free images stored here.
-load('zen_stack_wo_cld2.RData')
-load('azt_stack_wo_cld2.RData')
+#load('zen_stack_wo_cld2.RData')
+#load('azt_stack_wo_cld2.RData')
 load('cld_stack.RData')
 load('Gmd_dnb_stack_wo_cld2.RData')
 load('Gmn_dnb_stack_wo_cld2.RData')
@@ -137,9 +140,14 @@ locations3 = read.dbf('/groups/manngroup/India VIIRS/Location Data/Emptyspaces.d
 names(locations3)=c('ID','LON','LAT')
 locations3$STATE='MH'
 locations3$LOCATION=paste('uninhabited',1:length(locations3$STATE),sep='')
+locations4 = read.csv('/groups/manngroup/India VIIRS/Location Data/4 TS Hyderabad ESMI Locations with Coordinates.csv')
+names(locations4) = c('STATE','DISTRICT.CITY','LOCATION','LAT','LON','Ag.Rural')
+
 locations=rbind.fill(locations,jumba.df)
 locations=rbind.fill(locations,locations2)
 locations=rbind.fill(locations,locations3)
+locations=rbind.fill(locations,locations4)
+locations=subset(locations,select=-c(ID))
 head(locations,50)
 
 
@@ -148,8 +156,8 @@ coordinates(locations)= ~LON+LAT
 proj4string(locations) <- CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
 save(locations,file='locationsXY.RData')
 dnb_values_loc = extract(dnb_stack,locations, df=T)
-zen_values_loc = extract(zen_stack,locations,  df=T)
-azt_values_loc  = extract(azt_stack,locations, df=T)
+#zen_values_loc = extract(zen_stack,locations,  df=T)
+#azt_values_loc  = extract(azt_stack,locations, df=T)
 Gmd_dnb_values_loc = extract(Gmd_dnb_stack,locations, df=T)
 Gmn_dnb_values_loc = extract(Gmn_dnb_stack,locations, df=T)     
 cld_values_loc = extract(cld_stack,locations, df=T)
@@ -158,8 +166,8 @@ time_stamp_extract_loc = gsub(x=colnames(dnb_values_loc),pattern = "(.*X)(.*)(.*
 
 # change time stamps
 names(dnb_values_loc) = time_stamp_extract_loc
-names(zen_values_loc) = time_stamp_extract_loc
-names(azt_values_loc) = time_stamp_extract_loc
+#names(zen_values_loc) = time_stamp_extract_loc
+#names(azt_values_loc) = time_stamp_extract_loc
 names(Gmn_dnb_values_loc) = time_stamp_extract_loc
 names(Gmd_dnb_values_loc) = time_stamp_extract_loc
 names(cld_values_loc) = time_stamp_extract_loc
@@ -189,8 +197,8 @@ put_in_long_loc <- function(wide_data,abreviation){
 
 
 dnb_values_loc=put_in_long_loc(dnb_values_loc,'dnb')
-zen_values_loc= put_in_long_loc(zen_values_loc,'zen')
-azt_values_loc=put_in_long_loc(azt_values_loc,'azt')
+#zen_values_loc= put_in_long_loc(zen_values_loc,'zen')
+#azt_values_loc=put_in_long_loc(azt_values_loc,'azt')
 cld_values_loc=put_in_long_loc(cld_values_loc,'cld')
 Gmd_dnb_values_loc=put_in_long_loc(Gmd_dnb_values_loc,'Gmd')
 Gmn_dnb_values_loc=put_in_long_loc(Gmn_dnb_values_loc,'Gmn')
@@ -205,17 +213,14 @@ phase$date.time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,se
 
 
 # join in moon and dnb
-dnb_values_loc = join(dnb_values_loc,zen_values_loc) # add moon characteristics to dnb values
-dnb_values_loc = join(dnb_values_loc,azt_values_loc)
+#dnb_values_loc = join(dnb_values_loc,zen_values_loc) # add moon characteristics to dnb values
+#dnb_values_loc = join(dnb_values_loc,azt_values_loc)
 dnb_values_loc = join(dnb_values_loc,Gmd_dnb_values_loc)
 dnb_values_loc = join(dnb_values_loc,Gmn_dnb_values_loc)
 dnb_values_loc = join(dnb_values_loc,phase)
 dnb_values_loc = join(dnb_values_loc,cld_values_loc)
 
-#head(dnb_values[20000:25000,],50)
 dnb_values_loc[550:650,]
-
-
 
 
 
@@ -280,10 +285,10 @@ dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 # install.packages('readxl')
 library(readxl)
 file_list = list.files('..//Hourly Voltage Data//',pattern='Unified')
-i=1
+file_list
 
 # read in hourly voltage data
-a_location = read.csv(paste("..//Hourly Voltage Data//",file_list[i],sep=''), na = "NA",stringsAsFactors =F)
+a_location = read.csv(paste("..//Hourly Voltage Data//",file_list[1],sep=''), na = "NA",stringsAsFactors =F)
 names(a_location) = c('anID','location','date','hour',paste(1:60))	
 a_location = a_location[,c('location','date','hour',paste(1:60))]
 head(a_location)
@@ -300,7 +305,6 @@ head(voltage)
 
 # go from 0-23 to 1-24 clock
 voltage$hour =  as.numeric(voltage$hour+1)
-
 
 # save the output
 #save(voltage,file='..//Hourly Voltage Data//Voltage2.RData')
@@ -327,6 +331,9 @@ dnb_values$date.time2 = as.POSIXct(dnb_values$date.time2, tz="UTC")
 head(dnb_values$date.time2)
 
 
+
+
+########### CORRECT NAMES FOR NEW LOCATION ####################
 ###################################################################
 # match to closest time in local data 
 # store location names for dnb and voltage data
@@ -350,6 +357,7 @@ look_up[4,2] = locales_v[32]
 look_up[5,2] = locales_v[31]
 look_up[27,2] = locales_v[21]
 head(look_up,40)
+
 
 
 # switch names out use non-voltage data names 
