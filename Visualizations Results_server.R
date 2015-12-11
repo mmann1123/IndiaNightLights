@@ -26,11 +26,9 @@ library(foreign)
 library(caret)
 
 
-# Time Series Plots for locations of interest -----------------------------
 
+# A: Stack data remove clouds, correct times ------------------------------------------------------
 
-# Lunar adjustments ------------------------------------------------------
-# try to remove cyclical lunar signal from cells
 rm(list=ls())
 
 # read in data
@@ -114,8 +112,10 @@ Gmd = foreach(i=1:dim(dnb_stack)[3],.combine='c') %dopar% {cellStats(dnb_stack[[
 for(i in 1:dim(dnb_stack)[3]){Gmd_dnb_stack[[i]][]=Gmd[i]}
 save(Gmd_dnb_stack,file = 'Gmd_dnb_stack_wo_cld2.RData')
 
+save.image(file='..//AllData_A.RData')
 
-# Extract dnb values for all training data locations  -------------------------------------------
+
+# B: Extract dnb values for all training data locations  -------------------------------------------
 
 # load data
 rm(list=ls())
@@ -222,9 +222,10 @@ dnb_values_loc = join(dnb_values_loc,cld_values_loc)
 
 dnb_values_loc[550:650,]
 
+save.image(file='..//AllData_B.RData')
 
 
-# LOAD DNB_VALUES --------------------------------------------------------------
+#C:  LOAD DNB_VALUES --------------------------------------------------------------
 
 
 # save output to load quickly
@@ -274,15 +275,14 @@ stopImplicitCluster()
 dnb_values$demean_dnb = dnb_values$dnb - dnb_values$mn_dnb
 
 
+save.image(file='..//AllData_C.RData')
     
 
-# Compare to actual outage data  ----------------------------------------------------------
-
-
+# D: Compare to actual outage data  ----------------------------------------------------------
+#load('..//AllData_C.RData')
 
 # read in each xls file and convert to long format and write to csv
 # only need to run this the first time... processing unformated files
-# install.packages('readxl')
 library(readxl)
 file_list = list.files('..//Hourly Voltage Data//',pattern='Unified')
 file_list
@@ -330,10 +330,13 @@ dnb_values$date.time2 = strptime(dnb_values$date.time,'%Y%j.%H%M')
 dnb_values$date.time2 = as.POSIXct(dnb_values$date.time2, tz="UTC")
 head(dnb_values$date.time2)
 
+save.image(file='..//AllData_D.RData')
 
 
 
-########### CORRECT NAMES FOR NEW LOCATION ####################
+# E: CORRECT NAMES FOR NEW LOCATION ------------------------------------------
+load('..//AllData_D.RData')
+
 ###################################################################
 # match to closest time in local data 
 # store location names for dnb and voltage data
@@ -350,13 +353,12 @@ for(i in 1:length(unique(voltage$location))){
 look_up = data.frame(locales =locales,
   	locales_v = apply(data.frame(locales),1,function(x) locales_v[pmatch(x, locales_v)]),
 	stringsAsFactors=F)
+look_up
 
-head(look_up,40)
-
-look_up[4,2] = locales_v[32]
-look_up[5,2] = locales_v[31]
-look_up[27,2] = locales_v[21]
-head(look_up,40)
+look_up[4,2] = locales_v[34]
+look_up[5,2] = locales_v[33]
+look_up[27,2] = locales_v[23]
+look_up
 
 
 
@@ -365,7 +367,7 @@ for(i in 1:length(look_up$locales)){
 	print(i)
 	voltage$location[voltage$location == look_up$locales_v[i] ] = look_up$locales[i]
 }
-# double check that it worked
+# double check that spellings are same on both sheets
  sort(unique(dnb_values$location))
  sort(unique(voltage$location))
 
@@ -414,7 +416,7 @@ for(i in 1:length(locales)){
 
 
 # save an image of all the data
-#save.image(file='..//Hourly Voltage Data//AllData.RData')
+save.image(file='..//Hourly Voltage Data//AllData.RData')
 
 
 
@@ -488,9 +490,9 @@ custom_error = function(y,pred){
 
 
 
-tuned.r10 = mctune(randomForest, train.x = form, data = test_join_holder.train,
-         tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
-         mc.control=list(mc.cores=16, mc.preschedule=T,error.fun=custom_error),confusionmatrizes=T )
+tuned.r10 = tune(randomForest, train.x = form, data = test_join_holder.train,
+         tunecontrol = tune.control(sampling = "cross",cross = 5,error.fun=custom_error), ranges=rf_ranges,
+         mc.control=list(mc.cores=16, mc.preschedule=T),confusionmatrizes=T )
 
 save(tuned.r10,file='..//Hourly Voltage Data//tunedTrees10.RData')
 
@@ -651,6 +653,7 @@ leng_days_raster = prediction_stack[[1]]  # create a raster that holds the total
 leng_days_raster[]=dim(prediction_stack)[3]
 percent_outage = outage_count / (leng_days_raster-cloud_count)
 writeRaster(percent_outage,'predictions/percent_outage.tif', overwrite=T)
+plot(percent_outage)
 
 # compare to actual reliability 
 load('..//Hourly Voltage Data//AllData.RData')
@@ -665,6 +668,7 @@ hist(test_join_holder$voltage)
 test_join_holder$lightsout = NA
 test_join_holder$lightsout[ test_join_holder$voltage<100  ] = 1   # outage
 test_join_holder$lightsout[ grepl('uninhabit',test_join_holder$location)  ] = 0   # uninhabited areas assigned value of zero b/c no lights
+head(test_join_holder,20)
 
 
 count_out = aggregate(lightsout~location, data = test_join_holder, function(x){sum(x,na.rm=T)}) # count outages
@@ -677,23 +681,28 @@ reliability$percent_outage = reliability$lightsout / reliability$obs
 #extract dnb estimates of percent_outage to points
 load('locationsXY.RData')
 locations_reliability = locations
-names(locations_reliability) = c('STATE','DISTRICT.CITY','location','Ag.Rural','ID')
+names(locations_reliability) = c('STATE','DISTRICT.CITY','location','Ag.Rural')
 locations_reliability = locations_reliability[!(locations_reliability@data$location=='Chandikapur'|
 	locations_reliability@data$location=='Kanheri Sarap'),]
 locations_reliability@data = join(locations_reliability@data,reliability)
 locations_reliability@data = cbind(locations_reliability@data ,extract(percent_outage,locations_reliability, df=T))
-names(locations_reliability)=c("STATE","DISTRICT.CITY","location","Ag.Rural","ID","lightsout",
+names(locations_reliability)=c("STATE","DISTRICT.CITY","location","Ag.Rural","lightsout",
 	"obs","percent_outage","ID","percent_outage_estimate")
 
 
 #visualize comparison
-plot(locations_reliability@data$percent_outage_estimate,locations_reliability@data$percent_outage,xlab='predicted',ylab='actual')
+plot(locations_reliability@data$percent_outage_estimate,locations_reliability@data$percent_outage,
+	xlab='predicted',ylab='actual')
 lm1 = lm(percent_outage~percent_outage_estimate,data=locations_reliability@data)
 summary(lm1)
+abline(lm1)
+abline(0, 1,col='red')
 # test if intercept = 0 and slope = 1
 (summary(lm1)$coefficients[1]-0)/summary(lm1)$coefficients[3]
 (summary(lm1)$coefficients[2]-1)/summary(lm1)$coefficients[4]
-#0.13 without sd or mn
+#0.15 without sd or mn
+
+
 
 
 # Stable Lights Map -------------------------------------------------------
@@ -716,6 +725,35 @@ writeRaster(md_dnb_layer,'predictions/md_dnb_layer.tif', overwrite=T)
 qt_dnb_layer = calc(dnb_stack,function(x){quantile(x,na.rm=T)} )
 names(qt_dnb_layer)=paste('Precentile',c(0,25,50,75,100))
 writeRaster(qt_dnb_layer,'predictions/qt_dnb_layer.tif', overwrite=T)
+
+
+
+# Extract reliability to shapefile ----------------------------------------
+
+#mask out non-electrified
+qplot(md, data=data.frame(md=getValues(md_dnb_layer)), geom="histogram",binwidth=1e-10)+coord_cartesian(xlim=c(0,5e-9))
+# use 1e-9 as cutoff for non-electrified for now 
+
+library(rgdal)
+library(maptools)
+proj = proj4string(readOGR('..//Boundary Data//Census_2011//Country',"2011_Dist"))
+districts = readShapePoly("..//Boundary Data//Census_2011//Country//2011_Dist.shp", proj4string=CRS(proj))
+plot(percent_outage)
+plot(districts,add=T)
+
+percent_outage[percent_outage<1e-9]=NA  # mask out non-electrified
+mn_percent_outage = extract(percent_outage, districts, fun = mean, na.rm = T, df = T) # don't remove NA b/c of districts w few obs
+mn_percent_outage[mn_percent_outage[,2]==0,2]=NA   #if mn_percent_outage is 0 then it doesn't have any data, na out
+districts@data$mn_per_outage = mn_percent_outage[,2]
+write.csv(districts@data,'.//predictions//Districts_Outage.csv')
+writePolyShape(districts,'.//predictions//Districts Outage.shp')
+
+
+
+
+
+
+
 
 
 
