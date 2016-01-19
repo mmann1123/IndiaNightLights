@@ -1,12 +1,15 @@
 
-# this scripts reads in raster files exported from grid_viirs_data (3).R
+# this scripts reads in raster files exported from grid_viirs_data_server_2015.R
 # it 1) reads in a dnb, zenith angle, moon phase etc data, 2) extracts this for all training sites (with voltage meters)
 # 3) uses this info to train a ML model to predict outages 
 
 # Run the following in bash before starting R
  module load proj.4/4.8.0
  module load gdal/gcc/1.11
- module load R/3.0.2
+ #module use /home/mmann1123/local/modulefiles
+ #module load R/3.2.2
+ #module load R/3.0.2
+ module load R
  module load gcc/4.9.0
  R
 
@@ -25,10 +28,7 @@ library(party)
 library(foreign)
 library(caret)
 
-
-
 # A: Stack data remove clouds, correct times ------------------------------------------------------
-
 rm(list=ls())
 
 # read in data
@@ -467,10 +467,6 @@ rf_ranges = list(ntree=seq(1,40,1),mtry=5:35)
 
 form = factor(lightsout)~dnb+illum+phase+md_dnb+I(dnb-md_dnb) #dont use: sd_dnb mn_dnb+I(dnb-mn_dnb)
 
-#1691    0     0
-#0     1737   48
-#0      83    31
-
 # remove cloud cells multicore  returns NA but runs fast!
 library(foreach)
 library(doParallel)
@@ -488,8 +484,6 @@ custom_error = function(y,pred){
   return((y.outrate-pred.outrate)^2)	
 }
 
-
-
 tuned.r10 = tune(randomForest, train.x = form, data = test_join_holder.train,
          tunecontrol = tune.control(sampling = "cross",cross = 5,error.fun=custom_error), ranges=rf_ranges,
          mc.control=list(mc.cores=16, mc.preschedule=T),confusionmatrizes=T )
@@ -497,7 +491,16 @@ tuned.r10 = tune(randomForest, train.x = form, data = test_join_holder.train,
 save(tuned.r10,file='..//Hourly Voltage Data//tunedTrees10.RData')
 
 
+
 # TEST ACCURACY OF TREES  ----------------------------------------------------
+load('..//Hourly Voltage Data//tunedTrees10.RData')
+best parameters: ntree2, mtry 20
+
+plot(tuned.r10)
+
+# estimate variable importance
+modeledRF = randomForest(form, data=test_join_holder.train, ntree=2,importance=T) 
+varImpPlot(modeledRF)
 
 #library(caret)
 # read in stored regression trees look at performance 
@@ -515,26 +518,22 @@ predictions = predict(best.model, test_join_holder.test)
 table.random.forest = table(test_join_holder.test$lightsout, predictions)
 table.random.forest
 #confusionMatrix(predictions, test_join_holder.test$lightsout)
+    0     1      2
+0 1741    0     0 
+1    0   1877   52
+2    0   48      4
 
 
 # next function gives a graphical depiction of the marginal effect of a variable on the class probability (classification) or response (reg$
 partialPlot(best.model, test_join_holder, dnb, "2")
 partialPlot(best.model, test_join_holder, illum, "2")
 partialPlot(best.model, test_join_holder, phase, "2")
-partialPlot(best.model, test_join_holder, mn_dnb, "2")
+partialPlot(best.model, test_join_holder, md_dnb, "2")
 
 
 # Calculate error rate
 error.rate = 1 - sum(diag(as.matrix(table.random.forest))) / sum(table.random.forest)
 error.rate
-
-
-# try using random forest with new parameters
-# ntree 17 mtry 2
-#tuned.r11 = randomForest(form, data = test_join_holder.train,do.trace=T,ntree=34,mtry=1)
-#varImpPlot(tuned.r11)
-
-#plot(outlier(best.model), type="h",col=c("red", "green", "blue")[as.numeric(test_join_hoolder.train$lightsout)])
 
 
 # PREDICT OUT OF SAMPLE ---------------------------------------------------------------
@@ -549,8 +548,7 @@ load('dnb_stack_wo_cld.RData')
 dnb_date_time = substr(names(dnb_stack),2,20)
 
 # create sd_dnb and mn_dnb for each dnb time series
-
-sd_dnb_layer = calc(dnb_stack,function(x){sd(x,na.rm=T)} )
+#sd_dnb_layer = calc(dnb_stack,function(x){sd(x,na.rm=T)} )
 mn_dnb_layer = calc(dnb_stack,function(x){mean(x,na.rm=T)} )
 md_dnb_layer = calc(dnb_stack,function(x){median(x,na.rm=T)} )
 
@@ -563,7 +561,6 @@ phase$date_time = paste(phase$year,sprintf('%03d',(phase$doy)),'.',phase$time,se
 # load the tuned trees
 load(file='..//Hourly Voltage Data//tunedTrees10.RData')
 best.model = tuned.r10$best.model
-
 
 
 # remove cloud cells multicore  returns NA but runs fast!
@@ -691,16 +688,19 @@ names(locations_reliability)=c("STATE","DISTRICT.CITY","location","Ag.Rural","li
 
 
 #visualize comparison
-plot(locations_reliability@data$percent_outage_estimate,locations_reliability@data$percent_outage,
-	xlab='predicted',ylab='actual')
-lm1 = lm(percent_outage~percent_outage_estimate,data=locations_reliability@data)
+plot(locations_reliability@data$percent_outage_estimate[-c(13)],
+	locations_reliability@data$percent_outage[-c(13)],
+	xlab='predicted',ylab='actual',xlim=c(0,0.15),ylim=c(0,0.15))
+lm1 = lm(percent_outage~percent_outage_estimate,data=locations_reliability@data[-c(13),])
 summary(lm1)
-abline(lm1)
-abline(0, 1,col='red')
+abline(lm1,lty=2,lwd=1.5)
+abline(0, 1,col='black',lwd=1.5)
 # test if intercept = 0 and slope = 1
 (summary(lm1)$coefficients[1]-0)/summary(lm1)$coefficients[3]
 (summary(lm1)$coefficients[2]-1)/summary(lm1)$coefficients[4]
 #0.15 without sd or mn
+text(0.13,0.02,paste(round(summary(lm1)$coefficients[1],3),'+',round(summary(lm1)$coefficients[2],3)))
+text(0.1271,0.015,paste('R2 =',round(summary(lm1)$adj.r.square,3)))
 
 
 
