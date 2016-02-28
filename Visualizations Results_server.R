@@ -13,8 +13,10 @@
  module load gcc/4.9.0
  R
 
+
 library(raster)
 library(ggplot2)
+library(ggthemes)
 library(scales)
 library(reshape2)
 library(rgeos)
@@ -652,6 +654,13 @@ percent_outage = outage_count / (leng_days_raster-cloud_count)
 writeRaster(percent_outage,'predictions/percent_outage.tif', overwrite=T)
 plot(percent_outage)
 
+# Find uninhabited areas (sum of prediction stack should be ~0)
+pred_sum_uninhab = sum(prediction_stack,na.rm=T)
+writeRaster(pred_sum_uninhab,'predictions/pred_sum_uninhab.tif', overwrite=T)
+plot(pred_sum_uninhab)
+
+
+
 # compare to actual reliability 
 load('..//Hourly Voltage Data//AllData.RData')
 percent_outage = raster('predictions/percent_outage.tif')
@@ -666,9 +675,8 @@ test_join_holder$lightsout = NA
 test_join_holder$lightsout[ test_join_holder$voltage<100  ] = 1   # outage
 test_join_holder$lightsout[ grepl('uninhabit',test_join_holder$location)  ] = 0   # uninhabited areas assigned value of zero b/c no lights
 head(test_join_holder,20)
-
-
 count_out = aggregate(lightsout~location, data = test_join_holder, function(x){sum(x,na.rm=T)}) # count outages
+
 #count number of days with obs
 test_join_holder$obs = 1 
 out_of = aggregate(obs~location, data = test_join_holder, function(x){sum(x,na.rm=T)})
@@ -688,19 +696,32 @@ names(locations_reliability)=c("STATE","DISTRICT.CITY","location","Ag.Rural","li
 
 
 #visualize comparison
-plot(locations_reliability@data$percent_outage_estimate[-c(13)],
-	locations_reliability@data$percent_outage[-c(13)],
-	xlab='predicted',ylab='actual',xlim=c(0,0.15),ylim=c(0,0.15))
-lm1 = lm(percent_outage~percent_outage_estimate,data=locations_reliability@data[-c(13),])
-summary(lm1)
-abline(lm1,lty=2,lwd=1.5)
-abline(0, 1,col='black',lwd=1.5)
+plot_data = locations_reliability@data
+lm1 = lm(percent_outage~percent_outage_estimate,data=plot_data[-c(13),])
+
 # test if intercept = 0 and slope = 1
 (summary(lm1)$coefficients[1]-0)/summary(lm1)$coefficients[3]
 (summary(lm1)$coefficients[2]-1)/summary(lm1)$coefficients[4]
 #0.15 without sd or mn
-text(0.13,0.02,paste(round(summary(lm1)$coefficients[1],3),'+',round(summary(lm1)$coefficients[2],3)))
-text(0.1271,0.015,paste('R2 =',round(summary(lm1)$adj.r.square,3)))
+ggplot(plot_data[-c(13),],aes(x=percent_outage_estimate, y=percent_outage))+geom_point(colour='grey30',size=3)+
+        xlab('Predicted')+ylab('Actual')+ geom_abline(intercept = 0, slope = 1,size=1.1)+
+         stat_smooth(method="lm", se=T,size=1.5,linetype = 2)+
+	coord_cartesian(xlim = c(-.008,0.17), ylim = c(-.008,0.17))+ 
+	annotate("text", x = 0.13, y = 0.02, label = 
+	paste(round(summary(lm1)$coefficients[1],3),'+',round(summary(lm1)$coefficients[2],3)))+
+ 	annotate("text", x = 0.125, y = 0.013, label =paste('R2 =',round(summary(lm1)$adj.r.square,3)))+
+        annotate("text", x = 0.118, y = 0.006, label =
+		paste('(',round((summary(lm1)$coefficients[2]-1)/summary(lm1)$coefficients[4],2),')',sep=''))
+
+
+# Plot time series for a location
+unique(dnb_values$location)
+loc2plot = 'Saharkar Nagar'
+tilak = dnb_values[dnb_values$location==loc2plot & !is.na(dnb_values$dnb),]
+ggplot(tilak,aes(x=as.Date(date.time2), y=dnb))+geom_point(colour='grey30',size=2)+
+	xlab('2015')+ylab('Day Night Band Radiance')
+
+
 
 
 
