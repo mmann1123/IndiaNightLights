@@ -34,7 +34,8 @@ library(caret)
 rm(list=ls())
 
 # read in data
-setwd('/groups/manngroup/India\ VIIRS/2015')
+ #setwd('/groups/manngroup/India\ VIIRS/2015') #server
+ setwd('R:\\Mann_Research\\India VIIRS SERVER/2015')
 
 # pull available files
 files = dir(pattern = '.tif')
@@ -90,7 +91,7 @@ cld_stack = cld_stack[[ (1:length(common_cld))[common_cld] ]]
 # remove cloud cells multicore  returns NA but runs fast!
 library(foreach)
 library(doParallel)
-registerDoParallel(32)
+registerDoParallel(5)
 
 
 # remove cloud cells multicore  returns NA but runs fast!
@@ -121,28 +122,28 @@ save.image(file='..//AllData_A.RData')
 
 # load data
 rm(list=ls())
-setwd('/groups/manngroup/India\ VIIRS/2015')
+#setwd('/groups/manngroup/India\ VIIRS/2015') #server
+setwd('R:\\Mann_Research\\India VIIRS SERVER/2015')
 
 load('dnb_stack_wo_cld2.RData')    # start here cloud free images stored here.
 #load('zen_stack_wo_cld2.RData')
 #load('azt_stack_wo_cld2.RData')
 load('cld_stack.RData')
 load('Gmd_dnb_stack_wo_cld2.RData')
-load('Gmn_dnb_stack_wo_cld2.RData')
-
+ 
 
 # extract local testing data 
 # define locations of interest
-locations = read.csv('/groups/manngroup/India VIIRS/Location Data/MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
-locations2 = read.csv('/groups/manngroup/India VIIRS/Location Data/Other 28 ESMI MH Locations Coordinates.csv')
+locations = read.csv('../Location Data/MH-ESMI-Locations-Lat-Long-Overpass-Cuts-May-2015-ag.csv')
+locations2 = read.csv('../Location Data/Other 28 ESMI MH Locations Coordinates.csv')
 names(locations2) = c('STATE','DISTRICT.CITY','LOCATION','TYPE','LAT','LON','Ag.Rural')
 locations2 = locations2[,!names(locations2) %in% 'TYPE']
 jumba.df = data.frame(STATE='MH', DISTRICT.CITY="NA", LOCATION='Jumda',LAT=20.010094,LON=77.044271, Ag.Rural=T)
-locations3 = read.dbf('/groups/manngroup/India VIIRS/Location Data/Emptyspaces.dbf')
+locations3 = read.dbf('../Location Data/Emptyspaces.dbf')
 names(locations3)=c('ID','LON','LAT')
 locations3$STATE='MH'
 locations3$LOCATION=paste('uninhabited',1:length(locations3$STATE),sep='')
-locations4 = read.csv('/groups/manngroup/India VIIRS/Location Data/4 TS Hyderabad ESMI Locations with Coordinates.csv')
+locations4 = read.csv('../Location Data/4 TS Hyderabad ESMI Locations with Coordinates.csv')
 names(locations4) = c('STATE','DISTRICT.CITY','LOCATION','LAT','LON','Ag.Rural')
 
 locations=rbind.fill(locations,jumba.df)
@@ -231,7 +232,8 @@ save.image(file='..//AllData_B.RData')
 
 
 # save output to load quickly
-setwd('/groups/manngroup/India\ VIIRS/2015')
+#setwd('/groups/manngroup/India\ VIIRS/2015')
+setwd('R:\\Mann_Research\\India VIIRS SERVER/2015')
 
 #save(dnb_values_loc,file='dnb_values_w_moon_loc2.RData')
 load('dnb_values_w_moon_loc2.RData')
@@ -423,7 +425,9 @@ save.image(file='..//Hourly Voltage Data//AllData.RData')
 
 
 # Train a classifier to find outages ----------------------------------------------
-setwd('/groups/manngroup/India\ VIIRS/2015')
+#setwd('/groups/manngroup/India\ VIIRS/2015')
+setwd('R:\\Mann_Research\\India VIIRS SERVER/2015')
+
 load('..//Hourly Voltage Data//AllData.RData')
 
 # set up data for classifier (define what an outage is)
@@ -453,6 +457,7 @@ test_join_holder.train = test_join_holder[training.s,]
 # testing data set 
 testing.s = setdiff(1:nrow(test_join_holder), training.s)
 test_join_holder.test = test_join_holder[testing.s,]
+
 
 
 
@@ -496,7 +501,7 @@ save(tuned.r10,file='..//Hourly Voltage Data//tunedTrees10.RData')
 
 # TEST ACCURACY OF TREES  ----------------------------------------------------
 load('..//Hourly Voltage Data//tunedTrees10.RData')
-best parameters: ntree2, mtry 20
+#best parameters: ntree2, mtry 20
 
 plot(tuned.r10)
 
@@ -536,6 +541,30 @@ partialPlot(best.model, test_join_holder, md_dnb, "2")
 # Calculate error rate
 error.rate = 1 - sum(diag(as.matrix(table.random.forest))) / sum(table.random.forest)
 error.rate
+
+
+
+# Sensativity Analysis ----------------------------------------------------
+# test impact of reduced number of temporal observations on classifying outages
+ 10 3
+for(i in 1:15){
+set.seed(i)  
+rf_ranges = list(ntree=seq(1,20,1),mtry=5:30)
+
+tuned.model_temp_sense = tune(randomForest, train.x = form, data = test_join_holder,
+                 tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
+                 mc.control=list(mc.cores=5, mc.preschedule=T),confusionmatrizes=T )
+
+# Store the best model 
+best.model = tuned.model_temp_sense$best.model
+# Predict out of sample and create confusion matrix
+predictions = predict(best.model, test_join_holder.test)
+table.random.forest = table(test_join_holder.test$lightsout, predictions)
+print(i)
+print(table.random.forest)
+}
+
+
 
 
 # PREDICT OUT OF SAMPLE ---------------------------------------------------------------
