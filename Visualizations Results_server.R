@@ -95,7 +95,11 @@ registerDoParallel(5)
 
 
 # remove cloud cells multicore  returns NA but runs fast!
-foreach(i=1:dim(dnb_stack)[3]) %dopar% { dnb_stack[[i]][cld_stack[[i]]>0]=NA}
+foreach(i=1:dim(dnb_stack)[3]) %dopar% { 
+  
+  # ASSIGNMENT IN A DOPAR LOOP DOESN'T WORK!!!!!!!!!!!!!!!!!
+  
+  dnb_stack[[i]][cld_stack[[i]]>0]=NA}
 save(dnb_stack,file = 'dnb_stack_wo_cld2.RData')
 #foreach(i=1:dim(zen_stack)[3]) %dopar% { zen_stack[[i]][cld_stack[[i]]>0]=NA}
 #save(zen_stack,file = 'zen_stack_wo_cld2.RData')
@@ -450,6 +454,7 @@ test_join_holder = na.omit(test_join_holder)
 # store training and testing data
 prop = 0.75 # proportion of subset data
 set.seed(1234)
+
 # training data set 
 training.s = sample (1:nrow(test_join_holder), round(prop*nrow(test_join_holder),0))
 test_join_holder.train = test_join_holder[training.s,]
@@ -458,7 +463,8 @@ test_join_holder.train = test_join_holder[training.s,]
 testing.s = setdiff(1:nrow(test_join_holder), training.s)
 test_join_holder.test = test_join_holder[testing.s,]
 
-
+table(test_join_holder.train$lightsout)
+table(test_join_holder.test$lightsout)
 
 
 
@@ -477,7 +483,7 @@ form = factor(lightsout)~dnb+illum+phase+md_dnb+I(dnb-md_dnb) #dont use: sd_dnb 
 # remove cloud cells multicore  returns NA but runs fast!
 library(foreach)
 library(doParallel)
-registerDoParallel(32)
+registerDoParallel(4)
 
 # custom error function
 custom_error = function(y,pred){
@@ -546,25 +552,96 @@ error.rate
 
 # Sensativity Analysis ----------------------------------------------------
 # test impact of reduced number of temporal observations on classifying outages
- 10 3
-for(i in 1:15){
-set.seed(i)  
-rf_ranges = list(ntree=seq(1,20,1),mtry=5:30)
 
-tuned.model_temp_sense = tune(randomForest, train.x = form, data = test_join_holder,
-                 tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
+for(i in 1:15){
+  set.seed(i)  
+  rf_ranges = list(ntree=seq(1,5,1),mtry=10:30)
+
+  tuned.model_temp_sense = tune(randomForest, train.x = form, data = test_join_holder.train,
+                 tunecontrol = tune.control(sampling = "cross",cross = 5,error.fun=custom_error), ranges=rf_ranges,
                  mc.control=list(mc.cores=5, mc.preschedule=T),confusionmatrizes=T )
 
-# Store the best model 
-best.model = tuned.model_temp_sense$best.model
-# Predict out of sample and create confusion matrix
-predictions = predict(best.model, test_join_holder.test)
-table.random.forest = table(test_join_holder.test$lightsout, predictions)
-print(i)
-print(table.random.forest)
+  # Store the best model 
+  best.model = tuned.model_temp_sense$best.model
+  # Predict out of sample and create confusion matrix
+  predictions = predict(best.model, test_join_holder)
+  table.random.forest = table(test_join_holder$lightsout, predictions)
+  print(i)
+  print(table.random.forest)
 }
 
-
+[1] 1
+predictions
+0    1    2
+0 1741    0    0
+1    0 1929    0
+2    0    3   49
+[1] 2
+predictions
+0    1    2
+0 1741    0    0
+1    0 1929    0
+2    0   10   42
+[1] 3
+predictions
+0    1    2
+0 1741    0    0
+1    0 1929    0
+2    0    6   46
+[1] 4
+predictions
+0    1    2
+0 1741    0    0
+1    0 1929    0
+2    0    5   47
+[1] 5
+predictions
+0    1    2
+0 1741    0    0
+1    0 1929    0
+2    0    5   47
+[1] 6
+predictions
+0    1    2
+0 1741    0    0
+1    0 1929    0
+2    0    4   48
+[1] 7
+predictions
+0    1    2
+0 1741    0    0
+1    0 1929    0
+2    0    4   48
+[1] 8
+predictions
+0    1    2
+0 1741    0    0
+1    0 1929    0
+2    0    4   48
+[1] 9
+predictions
+0    1    2
+0 1741    0    0
+1    0 1929    0
+2    0    4   48
+[1] 10
+predictions
+0    1    2
+0 1741    0    0
+1    0 1929    0
+2    0    5   47
+[1] 11
+predictions
+0    1    2
+0 1741    0    0
+1    0 1929    0
+2    0    5   47
+[1] 12
+predictions
+0    1    2
+0 1741    0    0
+1    0 1929    0
+2    0    4   48
 
 
 # PREDICT OUT OF SAMPLE ---------------------------------------------------------------
@@ -651,6 +728,9 @@ cld_stack = cld_stack[[ (1:length(common_cld))[common_cld] ]]
 # Mask prediction stack
 foreach(i=1:dim(prediction_stack)[3],.inorder=T,.packages=c('raster')) %dopar% { 
 	print(i)
+  
+  # ASSIGNMENT IN A DOPAR LOOP DOESN'T WORK!!!! THIS IS WORKING
+  
 	prediction_stack[[i]][cld_stack[[i]]>0]=NA}
 save(prediction_stack, file='prediction_stack_wo_cld.RData')
 
@@ -814,37 +894,37 @@ KML(md_dnb_layer,'predictions/md_dnb_layer',blur=50,overwrite=T)
 KML(percent_outage,'predictions/percent_outage',blur=50,overwrite=T, col=rev(rainbow(25)))
 
 
-
-
-# Outlier detection  ----------------------------------------------------------
-# https://blog.twitter.com/2015/introducing-practical-and-robust-anomaly-detection-in-a-time-series
-
-
-
-# install.packages("devtools")
-# devtools::install_github("twitter/AnomalyDetection")
-library(AnomalyDetection)
-
-help(AnomalyDetectionTs)
-data_urban$date.time = strptime(data_urban$date.time,"%Y%j.%H%M" )
-data3= data_urban[,c('date.time','dnb')]
-data3$dnb = data3$dnb*1e9
-row.names(data3) = 1:dim(data3)[1]
-res = AnomalyDetectionTs(data3, max_anoms=0.03, direction='pos', plot=TRUE,
-        piecewise_median_period_weeks=8,longterm=T)
-res$plot
-
-# impulse sateration https://cran.r-project.org/web/packages/gets/gets.pdf from felix
-library(zoo)
-library(gets)
-data4 = zoo(data_urban[,'dnb'],data_urban[,'date.time'])
-
-# add a time trend
-t = zoo(1:length(data4[,1]),data_urban[,'date.time'])
-
-sat = isat(data4, t.pval=min(0.01,(1/length(data4[,1]))),mxreg=t)
-plot(data4)
-
+# 
+# 
+# # Outlier detection  ----------------------------------------------------------
+# # https://blog.twitter.com/2015/introducing-practical-and-robust-anomaly-detection-in-a-time-series
+# 
+# 
+# 
+# # install.packages("devtools")
+# # devtools::install_github("twitter/AnomalyDetection")
+# library(AnomalyDetection)
+# 
+# help(AnomalyDetectionTs)
+# data_urban$date.time = strptime(data_urban$date.time,"%Y%j.%H%M" )
+# data3= data_urban[,c('date.time','dnb')]
+# data3$dnb = data3$dnb*1e9
+# row.names(data3) = 1:dim(data3)[1]
+# res = AnomalyDetectionTs(data3, max_anoms=0.03, direction='pos', plot=TRUE,
+#         piecewise_median_period_weeks=8,longterm=T)
+# res$plot
+# 
+# # impulse sateration https://cran.r-project.org/web/packages/gets/gets.pdf from felix
+# library(zoo)
+# library(gets)
+# data4 = zoo(data_urban[,'dnb'],data_urban[,'date.time'])
+# 
+# # add a time trend
+# t = zoo(1:length(data4[,1]),data_urban[,'date.time'])
+# 
+# sat = isat(data4, t.pval=min(0.01,(1/length(data4[,1]))),mxreg=t)
+# plot(data4)
+# 
 
 
 
